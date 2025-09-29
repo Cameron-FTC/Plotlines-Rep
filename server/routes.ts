@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { socialStoryRequestSchema, type SocialStoryRequest, type GeneratedSocialStory, type StepImage } from "../shared/schema";
 
   apiKey: process.env.OPENAI_API_KEY,
-});
+;
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Generate social story with image
