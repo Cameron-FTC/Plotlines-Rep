@@ -2,10 +2,6 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { socialStoryRequestSchema, type SocialStoryRequest, type GeneratedSocialStory, type StepImage } from "../shared/schema";
-
-  apiKey: process.env.OPENAI_API_KEY,
-;
-
 export async function registerRoutes(app: Express): Promise<Server> {
   // Generate social story with image
   app.post("/api/generate-story", async (req, res) => {
@@ -25,24 +21,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
         const stepNumber = i + 1;
-        const stepText = step.replace(/^\d+\.\s*/, '').replace(/^•\s*/, '');
+        const stepText = step
+          .replace(/^\d+\.\s*/, '')
+          .replace(/^•\s*/, '');
 
-        // Instead of generating an image, generate descriptive text
+        // Create a descriptive "image" text instead of generating an image
         const stepImageUrl = `Description: An appropriate illustration could depict "${stepText}"`;
 
         stepImages.push({
           stepNumber,
           stepText,
-          imageUrl: stepImageUrl
+          imageUrl: stepImageUrl,
         });
       }
 
-      // All steps now have been processed above - no need for additional processing
+// All steps now have been processed above - no need for additional processing
       
-      // Instead of main image, add a text description
+      // Instead of generating a main image, create a descriptive cover text
       const mainImageUrl = `Description: An appropriate cover illustration could depict the theme of "${storyTitle}"`;
-
-              request,
+      // Create the complete story response
+      const story: GeneratedSocialStory = {
+        id: `story-${Date.now()}`,
+        title: storyTitle,
+        story: storyContent,
+        imageUrl: mainImageUrl,
+        stepImages,
+        request,
         createdAt: new Date().toISOString(),
       };
 
