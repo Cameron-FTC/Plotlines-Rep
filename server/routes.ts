@@ -2,9 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { socialStoryRequestSchema, type SocialStoryRequest, type GeneratedSocialStory, type StepImage } from "../shared/schema";
-import OpenAI from "openai";
 
-const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
