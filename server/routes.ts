@@ -21,73 +21,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Extract steps from the story content
       const steps = extractSteps(storyContent);
       
-      // Generate images for ALL steps - comprehensive visual storytelling
+      // Generate descriptive text for ALL steps instead of images
       const stepImages: StepImage[] = [];
-      
+
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
         const stepNumber = i + 1;
         const stepText = step.replace(/^\d+\.\s*/, '').replace(/^•\s*/, '');
-        
-        let stepImageUrl: string | undefined;
-        
-        try {
-          // Generate step-specific image prompt
-          const stepImagePrompt = generateStepImagePrompt(request, stepText, stepNumber);
-          
-          // Generate image using OpenAI DALL-E (optimized for speed)
-          const imageResponse = await openai.images.generate({
-            model: "dall-e-3",
-            prompt: stepImagePrompt,
-            size: "1024x1024", // Keep standard size for quality
-            quality: "standard", // Standard quality is faster than hd
-            style: "natural",
-            n: 1,
-          });
 
-          stepImageUrl = imageResponse.data?.[0]?.url;
-          console.log(`Successfully generated image for step ${stepNumber}`);
-        } catch (imageError: any) {
-          console.log(`Image generation failed for step ${stepNumber}, proceeding without image:`, imageError.message || imageError);
-          stepImageUrl = undefined;
-        }
-        
+        // Instead of generating an image, generate descriptive text
+        const stepImageUrl = `Description: An appropriate illustration could depict "${stepText}"`;
+
         stepImages.push({
           stepNumber,
           stepText,
           imageUrl: stepImageUrl
         });
       }
-      
+
       // All steps now have been processed above - no need for additional processing
       
-      // Generate main story image as fallback
-      let mainImageUrl: string | undefined;
-      try {
-        const mainImagePrompt = generateImagePrompt(request);
-        const imageResponse = await openai.images.generate({
-          model: "dall-e-3",
-          prompt: mainImagePrompt,
-          size: "1024x1024",
-          quality: "standard",
-          style: "natural",
-          n: 1,
-        });
-        mainImageUrl = imageResponse.data?.[0]?.url;
-        console.log("Successfully generated main story image");
-      } catch (imageError: any) {
-        console.log("Main image generation failed, proceeding without image:", imageError.message || imageError);
-        mainImageUrl = undefined;
-      }
+      // Instead of main image, add a text description
+      const mainImageUrl = `Description: An appropriate cover illustration could depict the theme of "${storyTitle}"`;
 
-      // Create the complete story response
-      const story: GeneratedSocialStory = {
-        id: `story-${Date.now()}`,
-        title: storyTitle,
-        story: storyContent,
-        imageUrl: mainImageUrl,
-        stepImages,
-        request,
+              request,
         createdAt: new Date().toISOString(),
       };
 
