@@ -19,8 +19,6 @@ export type User = typeof users.$inferSelect;
 
 // Social Story schemas
 export const socialStoryRequestSchema = z.object({
-  diagnosis: z.string().min(1, "Diagnosis is required"),
-  customDiagnosis: z.string().optional(),
   characterName: z.string().min(1, "Character name is required"),
   personPerspective: z.enum(["first", "third"]).default("first"),
   motivatingInterest: z.string().min(1, "Interest is required"),
