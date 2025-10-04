@@ -86,13 +86,24 @@ export default function StoryStepsViewer({ story, onEdit, onPrint }: StoryStepsV
     }
   };
 
+  // Print all pages: render a hidden print section with all steps and content
   const handlePrint = () => {
-    console.log('Print story:', story.id);
-    if (onPrint) {
-      onPrint();
-    } else {
-      window.print();
-    }
+    // Open print dialog for the print section
+    const printContents = document.getElementById('print-all-pages')?.innerHTML;
+    if (!printContents) return;
+    const printWindow = window.open('', '', 'height=800,width=800');
+    if (!printWindow) return;
+    printWindow.document.write('<html><head><title>Print Story</title>');
+    // Optionally add styles here
+    const styleTags = Array.from(document.querySelectorAll('style,link[rel="stylesheet"]'));
+    styleTags.forEach(tag => printWindow.document.write(tag.outerHTML));
+    printWindow.document.write('</head><body>');
+    printWindow.document.write(printContents);
+    printWindow.document.write('</body></html>');
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
   };
 
   const handleEdit = () => {
@@ -153,6 +164,43 @@ export default function StoryStepsViewer({ story, onEdit, onPrint }: StoryStepsV
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
+      {/* Hidden print section for all pages */}
+      <div id="print-all-pages" style={{ display: 'none' }}>
+        <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#222' }}>
+          <h1 style={{ fontSize: 28, marginBottom: 8 }}>{story.title}</h1>
+          {story.imageUrl && (
+            <div style={{ marginBottom: 16, textAlign: 'center' }}>
+              <img src={story.imageUrl} alt={`Therapeutic illustration for ${story.request.specificActivity}`} style={{ maxWidth: 400, width: '100%', borderRadius: 8, boxShadow: '0 2px 8px #0001' }} />
+            </div>
+          )}
+          {/* Intro */}
+          {intro && (
+            <div style={{ marginBottom: 16, fontSize: 18, whiteSpace: 'pre-wrap' }}>{intro}</div>
+          )}
+          {/* All steps */}
+          {steps.map((step, idx) => {
+            const stepNumber = idx + 1;
+            const stepImage = story.stepImages?.find(img => img.stepNumber === stepNumber);
+            return (
+              <div key={idx} style={{ marginBottom: 24, padding: 12, background: '#f8fafc', borderRadius: 8 }}>
+                {stepImage?.imageUrl && (
+                  <div style={{ marginBottom: 8, textAlign: 'center' }}>
+                    <img src={stepImage.imageUrl} alt={`Step ${stepNumber}: ${step.replace(/^\d+\.\s*/, '').replace(/^•\s*/, '')}`} style={{ maxWidth: 300, width: '100%', borderRadius: 8, boxShadow: '0 2px 8px #0001' }} />
+                  </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 32, height: 32, background: '#2563eb', color: '#fff', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 16 }}>{stepNumber}</div>
+                  <div style={{ fontSize: 18 }}>{step.replace(/^\d+\.\s*/, '').replace(/^•\s*/, '')}</div>
+                </div>
+              </div>
+            );
+          })}
+          {/* Conclusion */}
+          {conclusion && (
+            <div style={{ marginTop: 16, fontSize: 18, whiteSpace: 'pre-wrap' }}>{conclusion}</div>
+          )}
+        </div>
+      </div>
       {/* Header Card */}
       <Card>
         <CardHeader>
