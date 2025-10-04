@@ -13,7 +13,7 @@ export default function Header() {
               Plotlines: A Social Story Creation Tool
             </h1>
             <p className="text-sm text-muted-foreground">
-              Create personalized, neuro-affirming stories for therapeutic support
+              Create personalized, neuro-affirming stories for therapeutic support 
             </p>
           </div>
         </div>
