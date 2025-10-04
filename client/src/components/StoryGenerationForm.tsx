@@ -17,25 +17,6 @@ interface StoryGenerationFormProps {
   isGenerating: boolean;
 }
 
-const diagnosisOptions = [
-  "Not applicable",
-  "Autism Spectrum Disorder",
-  "ADHD",
-  "Intellectual Disability", 
-  "Anxiety Disorder",
-  "Sensory Processing Disorder",
-  "Down Syndrome",
-  "Cerebral Palsy",
-  "Specific Learning Disability",
-  "Other"
-];
-
-// Removed character options as we now use custom character name input
-
-// Removed theme options as requested
-
-// Changed to text input field instead of dropdown
-
 const storyCategoryOptions = [
   { value: "daily_living", label: "Activities of Daily Living", description: "Tasks like brushing teeth, getting dressed, eating meals" },
   { value: "social_skills", label: "Social Skills", description: "Interactions like sharing, taking turns, making friends" },
@@ -55,8 +36,6 @@ export default function StoryGenerationForm({ onSubmit, isGenerating }: StoryGen
   const form = useForm<SocialStoryRequest>({
     resolver: zodResolver(socialStoryRequestSchema),
     defaultValues: {
-      diagnosis: "",
-      customDiagnosis: "",
       characterName: "",
       personPerspective: "first" as const,
       motivatingInterest: "",
@@ -86,57 +65,6 @@ export default function StoryGenerationForm({ onSubmit, isGenerating }: StoryGen
       <CardContent>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-            {/* Row 1: Diagnosis */}
-            <FormField
-              control={form.control}
-              name="diagnosis"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Diagnosis</FormLabel>
-                  <Select onValueChange={(value) => {
-                    field.onChange(value);
-                    setShowCustomDiagnosis(value === "Other");
-                    if (value !== "Other") {
-                      form.setValue("customDiagnosis", "");
-                    }
-                  }} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger data-testid="select-diagnosis">
-                        <SelectValue placeholder="Select diagnosis" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {diagnosisOptions.map((option) => (
-                        <SelectItem key={option} value={option}>{option}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Custom Diagnosis Field */}
-            {showCustomDiagnosis && (
-              <FormField
-                control={form.control}
-                name="customDiagnosis"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Please specify diagnosis</FormLabel>
-                    <FormControl>
-                      <Input 
-                        placeholder="Enter specific diagnosis..."
-                        data-testid="input-custom-diagnosis"
-                        {...field} 
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-
             {/* Character Name */}
             <FormField
               control={form.control}

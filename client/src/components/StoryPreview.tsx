@@ -27,7 +27,7 @@ export default function StoryPreview({ story, onEdit, onPrint }: StoryPreviewPro
     if (onPrint) {
       onPrint();
     } else {
-      window.print();
+      categoryLabels.print();
     }
   };
 
