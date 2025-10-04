@@ -10,7 +10,7 @@ export default function Header() {
           </div>
           <div>
             <h1 className="text-2xl font-semibold text-foreground" data-testid="text-app-title">
-              Allied Health Social Story Tool
+              Plotlines: A Social Story Creation Tool
             </h1>
             <p className="text-sm text-muted-foreground">
               Create personalized, neuro-affirming stories for therapeutic support
