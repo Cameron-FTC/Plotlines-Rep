@@ -2,7 +2,59 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { socialStoryRequestSchema, type SocialStoryRequest, type GeneratedSocialStory, type StepImage } from "../shared/schema";
+import OpenAI from "openai";
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Endpoint to generate a social story using OpenAI API
+  app.post("/api/generate-story-openai", async (req, res) => {
+    try {
+      const {
+        characterName,
+        personPerspective,
+        motivatingInterest,
+        storyCategory,
+        specificActivity,
+        additionalNotes
+      } = req.body;
+
+      // Compose the prompt for OpenAI
+      const prompt = `Write a Social Story with exactly 10 steps for a character named "${characterName}", written in the ${personPerspective} person perspective. The story should relate anecdotes to the motivating interest: "${motivatingInterest}". The goal is to help the reader understand the category "${storyCategory}" in the context of "${specificActivity}". Incorporate the following additional notes: "${additionalNotes}". Format the story as an introduction, 10 clearly numbered steps, and a conclusion. Make it engaging, supportive, and developmentally appropriate.`;
+
+      // Call OpenAI API (placeholder API key)
+      const openaiApiKey = process.env.OPENAI_API_KEY;
+      if (!openaiApiKey) {
+        throw new Error("OPENAI_API_KEY environment variable is not set.");
+      }
+      const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${openaiApiKey}`
+        },
+        body: JSON.stringify({
+          model: "gpt-4",
+          messages: [
+            { role: "system", content: "You are a helpful assistant that writes therapeutic social stories for children." },
+            { role: "user", content: prompt }
+          ],
+          max_tokens: 1200,
+          temperature: 0.7
+        })
+      });
+
+      if (!openaiResponse.ok) {
+        const errorText = await openaiResponse.text();
+        throw new Error(`OpenAI API error: ${openaiResponse.status} - ${errorText}`);
+      }
+
+      const data = await openaiResponse.json();
+      const storyContent = data.choices?.[0]?.message?.content || "";
+
+      res.json({ story: storyContent });
+    } catch (error) {
+      console.error("Error generating story with OpenAI:", error);
+      res.status(500).json({ error: "Failed to generate story with OpenAI" });
+    }
+  });
   // Generate social story with image
   app.post("/api/generate-story", async (req, res) => {
     try {
