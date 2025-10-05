@@ -160,8 +160,6 @@ export default function StoryStepsViewer({ story, onEdit, onPrint }: StoryStepsV
     );
   }
 
-  const progress = ((currentPage + 1) / totalPages) * 100;
-
   return (
     <div className="max-w-4xl mx-auto space-y-4">
       {/* Hidden print section for all pages */}
@@ -211,7 +209,7 @@ export default function StoryStepsViewer({ story, onEdit, onPrint }: StoryStepsV
                 {story.title}
               </CardTitle>
               <p className="text-sm text-muted-foreground mt-2">
-                Step-by-step guide: Page {currentPage + 1} of {totalPages}
+                Step-by-step guide for {story.request.specificActivity} &nbsp;
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -225,7 +223,6 @@ export default function StoryStepsViewer({ story, onEdit, onPrint }: StoryStepsV
               </Button>
             </div>
           </div>
-          <Progress value={progress} className="w-full" />
         </CardHeader>
       </Card>
 
@@ -302,48 +299,6 @@ export default function StoryStepsViewer({ story, onEdit, onPrint }: StoryStepsV
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Navigation */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex justify-between items-center">
-            <Button
-              variant="outline"
-              onClick={previousPage}
-              disabled={currentPage === 0}
-              data-testid="button-previous-page"
-            >
-              <ChevronLeft className="w-4 h-4 mr-1" />
-              Previous Steps
-            </Button>
-
-            <div className="flex items-center gap-2">
-              {Array.from({ length: totalPages }, (_, i) => (
-                <Button
-                  key={i}
-                  variant={i === currentPage ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setCurrentPage(i)}
-                  className="w-8 h-8 p-0"
-                  data-testid={`button-page-${i + 1}`}
-                >
-                  {i + 1}
-                </Button>
-              ))}
-            </div>
-
-            <Button
-              variant="outline"
-              onClick={nextPage}
-              disabled={currentPage === totalPages - 1}
-              data-testid="button-next-page"
-            >
-              Next Steps
-              <ChevronRight className="w-4 h-4 ml-1" />
-            </Button>
-          </div>
         </CardContent>
       </Card>
     </div>
