@@ -32,7 +32,7 @@ export default function StoryStepsViewer({ story, onEdit, onPrint }: StoryStepsV
   };
 
   const steps = extractSteps(story.story);
-  const stepsPerPage = 2;
+  const stepsPerPage = 10;
   const totalPages = Math.ceil(steps.length / stepsPerPage);
   
   // Get story content without the steps for introduction/conclusion
