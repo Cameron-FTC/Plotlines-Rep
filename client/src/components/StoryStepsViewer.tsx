@@ -291,14 +291,12 @@ export default function StoryStepsViewer({ story, onEdit, onPrint }: StoryStepsV
             })}
           </div>
 
-          {/* Conclusion (only on last page) */}
-          {currentPage === totalPages - 1 && conclusion && (
+          {/* Conclusion */}
             <div className="mt-8">
               <div className="text-base leading-7 text-foreground whitespace-pre-wrap font-normal">
                 {conclusion}
               </div>
             </div>
-          )}
         </CardContent>
       </Card>
     </div>
