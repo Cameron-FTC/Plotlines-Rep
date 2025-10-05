@@ -49,46 +49,161 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const data = await openaiResponse.json();
       const storyContent = data.choices?.[0]?.message?.content || "";
 
-      res.json({ story: storyContent });
+      // Extract intro, steps, and conclusion from the storyContent
+      // Assumes format: intro, 10 numbered steps, conclusion
+      const lines = storyContent.split('\n').map(l => l.trim()).filter(Boolean);
+      let intro = "";
+      let steps = [];
+      let conclusion = "";
+      let stepStarted = false;
+      let stepLines = [];
+      let conclusionLines = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (/^1\./.test(line)) {
+          stepStarted = true;
+        }
+        if (!stepStarted) {
+          intro += (intro ? '\n' : '') + line;
+        } else if (/^\d+\./.test(line)) {
+          stepLines.push(line);
+        } else if (stepStarted) {
+          // After steps, everything else is conclusion
+          // If previous line was a step and this is not a step, it's likely conclusion
+          // Only start collecting conclusion after all 10 steps
+          if (stepLines.length >= 10) {
+            conclusionLines.push(line);
+          } else if (stepLines.length > 0) {
+            // Sometimes step text wraps to next line
+            stepLines[stepLines.length - 1] += ' ' + line;
+          }
+        }
+      }
+      // If conclusion wasn't found in loop, try to get it from the last lines
+      if (conclusionLines.length === 0 && stepLines.length > 10) {
+        conclusionLines = stepLines.slice(10);
+        stepLines = stepLines.slice(0, 10);
+      }
+      steps = stepLines.slice(0, 10);
+      conclusion = conclusionLines.join('\n');
+
+      res.json({
+        intro,
+        steps,
+        conclusion,
+        story: storyContent
+      });
     } catch (error) {
       console.error("Error generating story with OpenAI:", error);
       res.status(500).json({ error: "Failed to generate story with OpenAI" });
     }
   });
-  // Generate social story with image
+  // Generate social story with image or OpenAI (for Steven)
   app.post("/api/generate-story", async (req, res) => {
     try {
       const request = socialStoryRequestSchema.parse(req.body);
-      
+      if (request.characterName === "Steven") {
+        // Use OpenAI for Steven
+  const prompt = `Write a Social Story with exactly 10 steps for a character named "${request.characterName}", written in the ${request.personPerspective} person perspective. The story should relate anecdotes to the motivating interest: "${request.motivatingInterest}". The goal is to help the reader understand the category "${request.storyCategory}" in the context of "${request.specificActivity}". Incorporate the following additional notes: "${request.additionalNotes}".\n\nFormat the story as follows:\n- An introduction paragraph.\n- 10 steps, each on its own line, each starting with its number and a period (e.g., '1. ...', '2. ...', etc.), with no extra line breaks between steps.\n- A conclusion paragraph.\n\nDo not include any other sections or formatting. Make it engaging, supportive, and developmentally appropriate.`;
+
+        const openaiApiKey = process.env.OPENAI_API_KEY;
+        if (!openaiApiKey) {
+          throw new Error("OPENAI_API_KEY environment variable is not set.");
+        }
+        const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${openaiApiKey}`
+          },
+          body: JSON.stringify({
+            model: "gpt-4",
+            messages: [
+              { role: "system", content: "You are a helpful assistant that writes therapeutic social stories for children." },
+              { role: "user", content: prompt }
+            ],
+            max_tokens: 1200,
+            temperature: 0.7
+          })
+        });
+
+        if (!openaiResponse.ok) {
+          const errorText = await openaiResponse.text();
+          throw new Error(`OpenAI API error: ${openaiResponse.status} - ${errorText}`);
+        }
+
+        const data = await openaiResponse.json();
+        const storyContent = data.choices?.[0]?.message?.content || "";
+
+        // Extract intro, steps, and conclusion from the storyContent
+        const lines = storyContent.split('\n').map(l => l.trim()).filter(Boolean);
+        let intro = "";
+        let steps = [];
+        let conclusion = "";
+        let stepStarted = false;
+        let stepLines = [];
+        let conclusionLines = [];
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (/^1\./.test(line)) {
+            stepStarted = true;
+          }
+          if (!stepStarted) {
+            intro += (intro ? '\n' : '') + line;
+          } else if (/^\d+\./.test(line)) {
+            stepLines.push(line);
+          } else if (stepStarted) {
+            // After steps, everything else is conclusion
+            // If previous line was a step and this is not a step, it's likely conclusion
+            // Only start collecting conclusion after all 10 steps
+            if (stepLines.length >= 10) {
+              conclusionLines.push(line);
+            } else if (stepLines.length > 0) {
+              // Sometimes step text wraps to next line
+              stepLines[stepLines.length - 1] += ' ' + line;
+            }
+          }
+        }
+        // If conclusion wasn't found in loop, try to get it from the last lines
+        if (conclusionLines.length === 0 && stepLines.length > 10) {
+          conclusionLines = stepLines.slice(10);
+          stepLines = stepLines.slice(0, 10);
+        }
+        steps = stepLines.slice(0, 10);
+        conclusion = conclusionLines.join('\n');
+
+        res.json({
+          intro,
+          steps,
+          conclusion,
+          story: storyContent
+        });
+        return;
+      }
+      // ...existing code for non-Steven characters below...
       // Generate the complete story content
       const storyTitle = generateStoryTitle(request);
       const storyContent = generateEnhancedStory(request);
-      
       // Extract steps from the story content
       const steps = extractSteps(storyContent);
-      
       // Generate descriptive text for ALL steps instead of images
       const stepImages: StepImage[] = [];
-
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
         const stepNumber = i + 1;
         const stepText = step
           .replace(/^\d+\.\s*/, '')
           .replace(/^•\s*/, '');
-
         // Create a descriptive "image" text instead of generating an image
         const stepImageUrl = `Description: An appropriate illustration could depict "${stepText}"`;
-
         stepImages.push({
           stepNumber,
           stepText,
           imageUrl: stepImageUrl,
         });
       }
-
-// All steps now have been processed above - no need for additional processing
-      
       // Instead of generating a main image, create a descriptive cover text
       const mainImageUrl = `Description: An appropriate cover illustration could depict the theme of "${storyTitle}"`;
       // Create the complete story response
@@ -101,7 +216,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         request,
         createdAt: new Date().toISOString(),
       };
-
       res.json(story);
     } catch (error) {
       console.error("Error generating story:", error);
