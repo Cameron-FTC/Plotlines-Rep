@@ -54,13 +54,11 @@ Do not include any other headings or sections. Keep language supportive and deve
     let conclusionLines: string[] = [];
 
     let inSteps = false;
-    let stepsCount = 0;
 
     for (const line of rawLines) {
       const m = line.match(stepRegex);
       if (m) {
         inSteps = true;
-        stepsCount += 1;
         stepLines.push(line);
         continue;
       }
@@ -91,13 +89,7 @@ Do not include any other headings or sections. Keep language supportive and deve
       }
     }
 
-    // Clean the step prefixes “1.” etc. for the step text we store/display
-    const normalizedSteps = stepLines.slice(0, 10).map(s => s.replace(stepRegex, (m) => "" + m) // keep original prefix for display if your UI expects it
-      .replace(stepRegex, "") // or remove numbering here if your UI numbers itself
-      .trim()
-    );
-
-    // If your UI expects the full numbered line, comment the .replace above and use stepLines instead.
+    // Keep the numbered steps (1. … 10.) for UI consistency; also provide unnumbered if needed
     const stepsForUi = stepLines.map(s => s.replace(/^\s*/, "")); // keep “1. …” formatting
 
     const intro = introLines.join(" ").trim();
@@ -117,7 +109,7 @@ Do not include any other headings or sections. Keep language supportive and deve
   app.post("/api/generate-story-openai", async (req, res) => {
     try {
       const request = socialStoryRequestSchema.parse(req.body);
-      const { intro, steps, conclusion, full } = await generateStoryWithOpenAI(request);
+      const { intro, steps, conclusion } = await generateStoryWithOpenAI(request);
 
       // Build a consistent response for your frontend
       const stepImages: StepImage[] = steps.map((line, idx) => {
@@ -126,18 +118,18 @@ Do not include any other headings or sections. Keep language supportive and deve
           stepNumber: idx + 1,
           stepText,
           imageUrl: `Description: An appropriate illustration could depict "${stepText}"`
-        };
-      });
+  };
+});
 
       const story: GeneratedSocialStory = {
-        id: `story-${Date.now()}`,
-        title: generateStoryTitle(request),
-        story: `${intro}\n\n${steps.join("\n")}\n\n${conclusion}`,
-        imageUrl: `Description: An appropriate cover illustration could depict the theme of "${generateStoryTitle(request)}"`,
-        stepImages,
-        request,
-        createdAt: new Date().toISOString(),
-      };
+  id: `story-${Date.now()}`,
+  title: generateStoryTitle(request),
+  story: `${intro}\n\n${steps.join("\n")}\n\n${conclusion}`,
+  imageUrl: `Description: An appropriate cover illustration could depict the theme of "${generateStoryTitle(request)}"`,
+  stepImages,
+  request,
+  createdAt: new Date().toISOString(),
+};
 
       res.json(story);
     } catch (err) {
@@ -155,7 +147,7 @@ Do not include any other headings or sections. Keep language supportive and deve
 
       if (request.characterName === "Steven") {
         // Use OpenAI for Steven
-        const { intro, steps, conclusion, full } = await generateStoryWithOpenAI(request);
+        const { intro, steps, conclusion } = await generateStoryWithOpenAI(request);
 
         const stepImages: StepImage[] = steps.map((line, idx) => {
           const stepText = line.replace(/^\d{1,2}[.)-]\s*/, "");
@@ -191,18 +183,18 @@ Do not include any other headings or sections. Keep language supportive and deve
           stepNumber: i + 1,
           stepText,
           imageUrl: `Description: An appropriate illustration could depict "${stepText}"`
-        };
-      });
+  };
+});
 
-      const story: GeneratedSocialStory = {
-        id: `story-${Date.now()}`,
-        title: storyTitle,
-        story: storyContent,
-        imageUrl: `Description: An appropriate cover illustration could depict the theme of "${storyTitle}"`,
-        stepImages,
-        request,
-        createdAt: new Date().toISOString(),
-      };
+const story: GeneratedSocialStory = {
+  id: `story-${Date.now()}`,
+  title: storyTitle,
+  story: storyContent,
+  imageUrl: `Description: An appropriate cover illustration could depict the theme of "${storyTitle}"`,
+  stepImages,
+  request,
+  createdAt: new Date().toISOString(),
+};
 
       res.json(story);
     } catch (error) {
@@ -222,9 +214,9 @@ Do not include any other headings or sections. Keep language supportive and deve
 function generateStoryTitle(request: SocialStoryRequest): string {
   const activity = request.specificActivity.charAt(0).toUpperCase() + request.specificActivity.slice(1);
   if (request.personPerspective === "first") {
-    return `My Guide to ${activity}`;
+    return "My Guide to " + activity;
   } else {
-    return `${request.characterName}'s Guide to ${activity}`;
+    return request.characterName + "'s Guide to " + activity;
   }
 }
 
@@ -233,8 +225,116 @@ function generateEnhancedStory(request: SocialStoryRequest): string {
   const steps = generateActivitySpecificSteps(request);
   const challengeSteps = generateChallengeSteps(request);
   const conclusion = generateStoryConclusion(request);
-
-  return `${intro}\n\n${steps}${challengeSteps ? '\n\n' + challengeSteps : ''}\n\n${conclusion}`;
+  let result = intro + "\n\n" + steps;
+  if (challengeSteps) {
+    result += "\n\n" + challengeSteps;
+  }
+  result += "\n\n" + conclusion;
+  return result;
 }
 
-// … keep the rest of your helper functions (pronouns, scenes, extractSteps, etc.) exactly as in your file …
+// Placeholder: keep/merge your existing helpers from the original file
+// (pronouns, scenes, extractSteps, generateStoryIntro, generateActivitySpecificSteps, generateChallengeSteps, generateStoryConclusion, etc.)
+function extractSteps(story: string): string[] {
+  const lines = story.split(/\r?\n/);
+  const stepRegex = /^(\d+\.|•)\s+/;
+  const steps: string[] = [];
+  for (const l of lines) {
+    if (stepRegex.test(l.trim())) steps.push(l.trim());
+  }
+  // If not found as separate lines, try to split paragraphs with numbers
+  if (steps.length === 0) {
+    const numbered = story.split(/(?=\n\d+\.\s)/).map(s => s.trim()).filter(Boolean);
+    return numbered.length ? numbered : lines.filter(Boolean);
+  }
+  return steps;
+}
+
+// The next functions are stubs so this file compiles if you drop it in.
+// Replace them with your originals from the uploaded file.
+function generateStoryIntro(request: SocialStoryRequest): string { return "Intro placeholder"; }
+function generateActivitySpecificSteps(request: SocialStoryRequest): string { return "1. Step placeholder\n2. Step placeholder\n3. Step placeholder\n4. Step placeholder\n5. Step placeholder\n6. Step placeholder\n7. Step placeholder\n8. Step placeholder\n9. Step placeholder\n10. Step placeholder"; }
+function generateChallengeSteps(request: SocialStoryRequest): string { return ""; }
+function generateStoryConclusion(request: SocialStoryRequest): string { return "Conclusion placeholder"; }
+
+
+
+function getSubject(request: SocialStoryRequest, startOfSentence: boolean = true): string {
+  if (request.personPerspective === "first") {
+    return "I";
+  }
+  return request.characterName; // Always capitalize character names
+}
+
+
+
+function getPossessive(request: SocialStoryRequest, startOfSentence: boolean = false): string {
+  if (request.personPerspective === "first") {
+    return startOfSentence ? "My" : "my";
+  }
+  return request.characterName + "'s";
+}
+
+
+
+function getObjectPronoun(request: SocialStoryRequest): string {
+  return request.personPerspective === "first" ? "me" : request.characterName; // Always capitalize character names
+}
+
+
+
+function getReflexivePronoun(request: SocialStoryRequest): string {
+  return request.personPerspective === "first" ? "myself" : "themselves";
+}
+
+
+
+function getVerb(request: SocialStoryRequest, baseVerb: string): string {
+  const isFirstPerson = request.personPerspective === "first";
+  
+  // Handle irregular verbs
+  if (baseVerb === "am/is") return isFirstPerson ? "am" : "is";
+  if (baseVerb === "have/has") return isFirstPerson ? "have" : "has";
+  if (baseVerb === "try/tries") return isFirstPerson ? "try" : "tries";
+  
+  // Regular verbs - add 's' for third person
+  return isFirstPerson ? baseVerb : baseVerb + "s";
+}
+
+
+
+function generateStepImagePrompt(request: SocialStoryRequest, stepText: string, stepNumber: number): string {
+  const basePrompt = "A therapeutic, child-friendly illustration showing";
+  const category = request.storyCategory;
+  const interest = request.motivatingInterest?.toLowerCase() || "";
+  const activity = request.specificActivity.toLowerCase();
+  
+  // Create step-specific scene description
+  let stepScene = generateStepSpecificScene(stepText, category, activity, interest, stepNumber);
+  
+  // Add interest enhancement
+  const interestEnhancement = interest ? `, incorporating ${interest} elements that make the step engaging and motivating` : "";
+  
+  const styleDescription = ". Soft, calming art style with bright but soothing colors, child-friendly, therapeutic setting, no text or words, step-by-step visual guide";
+  
+  return `${basePrompt} ${stepScene}${interestEnhancement}${styleDescription}`;
+}
+
+
+
+function generateImagePrompt(request: SocialStoryRequest): string {
+  const basePrompt = "A therapeutic, child-friendly illustration showing";
+  const activityDescription = request.specificActivity.toLowerCase();
+  const category = request.storyCategory;
+  const interest = request.motivatingInterest?.toLowerCase() || "";
+  
+  // Generate scene based on category, activity, and interest integration
+  let sceneDescription = generateSceneByCategory(category, activityDescription, interest);
+  
+  // Enhance with interest-specific elements
+  const interestEnhancement = generateInterestEnhancement(interest, category);
+  
+  const styleDescription = ". Soft, calming art style with bright but soothing colors, child-friendly, therapeutic setting, no text or words";
+  
+  return `${basePrompt} ${sceneDescription}${interestEnhancement}${styleDescription}`;
+}
