@@ -31,7 +31,7 @@ STRICT FORMAT:
 Do not include any other headings or sections. Keep language supportive and developmentally appropriate.`;
 
     // Use SDK (chat.completions). You can swap the model via env if you like.
-    const completion = await openai.chat.completions.create({
+    const completion = await openai.responses.create({
       model: process.env.OPENAI_MODEL || "gpt-4o-mini",
       messages: [
         { role: "system", content: "You are a helpful assistant that writes therapeutic social stories for children." },
