@@ -3,8 +3,6 @@ import { createServer, type Server } from "http";
 import { socialStoryRequestSchema, type SocialStoryRequest, type GeneratedSocialStory, type StepImage } from "../shared/schema";
 import OpenAI from "openai";
 
-
-
 /**
  * SINGLE OpenAI client reused per process.
  */
@@ -13,13 +11,157 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-const response = await openai.responses.create({
-    model: "gpt-4.1",
-    input: "Tell me a three sentence bedtime story about a unicorn."
+/**
+ * Generate a Social Story using OpenAI Responses API, then parse into
+ * { intro, 10 numbered steps, conclusion }.
+ */
+export async function generateStoryWithOpenAI(request: SocialStoryRequest): Promise<{
+  intro: string;
+  steps: string[];
+  conclusion: string;
+  full: string;
+}> {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY environment variable is not set.");
+  }
+
+  const prompt = `Write a Social Story with exactly 10 steps for a character named "${request.characterName}", written in the ${request.personPerspective} person perspective.
+Motivating interest: "${request.motivatingInterest}"
+Story category: "${request.storyCategory}"
+Specific activity: "${request.specificActivity}"
+Additional notes: "${request.additionalNotes}"
+
+STRICT FORMAT:
+- Introduction paragraph (no heading).
+- Then 10 steps, each on its own line, each starting with its number and a period (e.g. "1. ...", "2. ...", … "10. ..."), no blank lines between.
+- Conclusion paragraph (no heading).
+Do not include any other headings or sections. Keep language supportive and developmentally appropriate.`;
+
+  // ——— Responses API ———
+  let storyContent = "";
+  try {
+    const resp = await openai.responses.create({
+      model: "gpt-4.1",
+      input: [
+        { role: "system", content: "You are a helpful assistant that writes therapeutic social stories for children." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.7,
+      max_output_tokens: 1200,  // Responses API uses max_output_tokens (not max_tokens)
+    });
+
+    // Easiest extraction for plain text
+    storyContent = (resp as any).output_text?.trim?.() ?? "";
+
+    // Fallback extraction if output_text missing (older SDKs)
+    if (!storyContent) {
+      const pieces = (resp as any).content ?? [];
+      storyContent = pieces
+        .map((p: any) => (p?.text?.value ?? p?.text ?? "").trim())
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+    }
+  } catch (err) {
+    // Surface details during dev; the route will add this to JSON
+    console.error("[OpenAI Responses API error]", safeError(err));
+    throw err;
+  }
+
+  if (!storyContent) {
+    throw new Error("OpenAI returned empty content (possibly rate-limited or blocked).");
+  }
+
+  // ——— Parse intro / steps / conclusion ———
+  const rawLines = storyContent.split("\n").map(s => s.trim()).filter(Boolean);
+  const stepRegex = /^(\d{1,2})[.)-]\s+/; // matches "1. ", "2) ", "3- " etc.
+
+  const introLines: string[] = [];
+  const stepLines: string[] = [];
+  const conclusionLines: string[] = [];
+
+  let inSteps = false;
+
+  for (const line of rawLines) {
+    const isStep = stepRegex.test(line);
+    if (isStep) {
+      inSteps = true;
+      stepLines.push(line);
+      continue;
+    }
+    if (!inSteps) {
+      introLines.push(line);
+    } else {
+      // Still in steps; either continuation or conclusion once 10 reached
+      if (stepLines.length >= 10) {
+        conclusionLines.push(line);
+      } else if (stepLines.length > 0) {
+        stepLines[stepLines.length - 1] += " " + line;
+      }
+    }
+  }
+
+  // Normalize to exactly 10
+  if (stepLines.length > 10) {
+    conclusionLines.unshift(...stepLines.splice(10));
+  }
+  if (stepLines.length < 10) {
+    const numbered = rawLines.filter(l => stepRegex.test(l)).slice(0, 10);
+    if (numbered.length) {
+      stepLines.splice(0, stepLines.length, ...numbered);
+    }
+  }
+  if (stepLines.length !== 10) {
+    throw new Error(`Expected 10 steps, got ${stepLines.length}`);
+  }
+
+  const intro = introLines.join(" ").trim();
+  const conclusion = conclusionLines.join(" ").trim();
+  const stepsForUi = stepLines.map(s => s.replace(/^\s*/, "")); // keep numbering "1. ..." for your viewer
+
+  return { intro, steps: stepsForUi, conclusion, full: storyContent };
+}
+
+app.post("/api/generate-story", async (req, res) => {
+  try {
+    const request = socialStoryRequestSchema.parse(req.body);
+
+    if (request.characterName === "Steven") {
+      const { intro, steps, conclusion } = await generateStoryWithOpenAI(request);
+
+      const stepImages: StepImage[] = steps.map((line, idx) => {
+        const stepText = line.replace(/^\d{1,2}[.)-]\s*/, "");
+        return {
+          stepNumber: idx + 1,
+          stepText,
+          imageUrl: `Description: An appropriate illustration could depict "${stepText}"`
+        };
+      });
+
+      const story: GeneratedSocialStory = {
+        id: `story-${Date.now()}`,
+        title: generateStoryTitle(request),
+        story: `${intro}\n\n${steps.join("\n")}\n\n${conclusion}`,
+        imageUrl: `Description: An appropriate cover illustration could depict the theme of "${generateStoryTitle(request)}"`,
+        stepImages,
+        request,
+        createdAt: new Date().toISOString(),
+      };
+
+      return res.json(story);
+    }
+
+    // … your non-Steven (offline) path …
+    // build the same GeneratedSocialStory payload and res.json(...)
+  } catch (err) {
+    const details = isDev() ? safeError(err) : undefined;
+    console.error("[/api/generate-story] error", details || err);
+    res.status(500).json({
+      error: "Failed to generate story with OpenAI",
+      ...(isDev() ? { details } : {})
+    });
+  }
 });
-
-console.log(response);
-
 // ————————————————————————————————————————————————————————————
 // Below here: your existing helpers (unchanged except minor typings)
 // ————————————————————————————————————————————————————————————
