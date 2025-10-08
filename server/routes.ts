@@ -10,10 +10,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-function isDev() {
-  return process.env.NODE_ENV !== "production";
-}
-
 function safeError(e: unknown) {
   const any = e as any;
   const base = { message: String(any?.message || e), name: any?.name };
