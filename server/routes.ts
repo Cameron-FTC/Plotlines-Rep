@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { socialStoryRequestSchema, type SocialStoryRequest, type GeneratedSocialStory, type StepImage } from "../shared/schema";
 import OpenAI from "openai";
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 /**
  * SINGLE OpenAI client reused per process.
@@ -152,6 +153,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         additionalNotes
       } = req.body;
 
+=======
+export async function registerRoutes(app: Express): Promise<Server> {
+  // Endpoint to generate a social story using OpenAI API
+  app.post("/api/generate-story-openai", async (req, res) => {
+    try {
+      const {
+        characterName,
+        personPerspective,
+        motivatingInterest,
+        storyCategory,
+        specificActivity,
+        additionalNotes
+      } = req.body;
+
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
       // Compose the prompt for OpenAI
       const prompt = `Write a Social Story with exactly 10 steps for a character named "${characterName}", written in the ${personPerspective} person perspective. The story should relate anecdotes to the motivating interest: "${motivatingInterest}". The goal is to help the reader understand the category "${storyCategory}" in the context of "${specificActivity}". Incorporate the following additional notes: "${additionalNotes}". Format the story as an introduction, 10 clearly numbered steps, and a conclusion. Make it engaging, supportive, and developmentally appropriate.`;
 
@@ -175,6 +191,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           max_tokens: 1200,
           temperature: 0.7
         })
+<<<<<<< HEAD
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
       });
 
@@ -183,6 +202,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         throw new Error(`OpenAI API error: ${openaiResponse.status} - ${errorText}`);
       }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
       return res.json(story);
     }
@@ -204,6 +224,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 // ————————————————————————————————————————————————————————————
 
 =======
+=======
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
       const data = await openaiResponse.json();
       const storyContent = data.choices?.[0]?.message?.content || "";
 
@@ -387,6 +409,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 }
 
 // Story generation functions (moved from frontend)
+<<<<<<< HEAD
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 function generateStoryTitle(request: SocialStoryRequest): string {
   const activity = request.specificActivity.charAt(0).toUpperCase() + request.specificActivity.slice(1);
@@ -402,6 +427,7 @@ function generateEnhancedStory(request: SocialStoryRequest): string {
   const steps = generateActivitySpecificSteps(request);
   const challengeSteps = generateChallengeSteps(request);
   const conclusion = generateStoryConclusion(request);
+<<<<<<< HEAD
 <<<<<<< HEAD
   let result = intro + "\n\n" + steps;
   if (challengeSteps) {
@@ -438,11 +464,16 @@ function generateStoryConclusion(request: SocialStoryRequest): string { return "
 
 
 =======
+=======
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
   
   return `${intro}\n\n${steps}${challengeSteps ? '\n\n' + challengeSteps : ''}\n\n${conclusion}`;
 }
 
 // Helper functions for proper pronoun handling
+<<<<<<< HEAD
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 function getSubject(request: SocialStoryRequest, startOfSentence: boolean = true): string {
   if (request.personPerspective === "first") {
@@ -452,14 +483,18 @@ function getSubject(request: SocialStoryRequest, startOfSentence: boolean = true
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 function getPossessive(request: SocialStoryRequest, startOfSentence: boolean = false): string {
   if (request.personPerspective === "first") {
     return startOfSentence ? "My" : "my";
   }
+<<<<<<< HEAD
 <<<<<<< HEAD
   return request.characterName + "'s";
 }
@@ -471,13 +506,21 @@ function getPossessive(request: SocialStoryRequest, startOfSentence: boolean = f
 }
 
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
+  return `${request.characterName}'s`;
+}
+
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 function getObjectPronoun(request: SocialStoryRequest): string {
   return request.personPerspective === "first" ? "me" : request.characterName; // Always capitalize character names
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 function getReflexivePronoun(request: SocialStoryRequest): string {
@@ -485,8 +528,11 @@ function getReflexivePronoun(request: SocialStoryRequest): string {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 function getVerb(request: SocialStoryRequest, baseVerb: string): string {
@@ -502,9 +548,12 @@ function getVerb(request: SocialStoryRequest, baseVerb: string): string {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 
 =======
+=======
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 function generateStoryIntro(request: SocialStoryRequest): string {
   const subject = getSubject(request, true);
   const subjectMid = getSubject(request, false);
@@ -663,6 +712,9 @@ function extractSteps(storyContent: string): string[] {
 }
 
 // Generate step-specific image prompts
+<<<<<<< HEAD
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 function generateStepImagePrompt(request: SocialStoryRequest, stepText: string, stepNumber: number): string {
   const basePrompt = "A therapeutic, child-friendly illustration showing";
@@ -682,8 +734,11 @@ function generateStepImagePrompt(request: SocialStoryRequest, stepText: string, 
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 =======
+=======
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 function generateStepSpecificScene(stepText: string, category: string, activity: string, interest: string, stepNumber: number): string {
   const lowerStepText = stepText.toLowerCase();
   
@@ -725,6 +780,9 @@ function generateStepSpecificScene(stepText: string, category: string, activity:
     return `a child progressing through step ${stepNumber} of ${activity}${interest ? ` with ${interest} elements providing motivation and engagement` : ""}, showing confidence and learning`;
   }
 }
+<<<<<<< HEAD
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 
 function generateImagePrompt(request: SocialStoryRequest): string {
@@ -744,7 +802,10 @@ function generateImagePrompt(request: SocialStoryRequest): string {
   return `${basePrompt} ${sceneDescription}${interestEnhancement}${styleDescription}`;
 }
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 
 function generateSceneByCategory(category: string, activity: string, interest: string): string {
   switch (category) {
@@ -859,4 +920,7 @@ function generateInterestEnhancement(interest: string, category: string): string
     return enhancements[0]; // Default to posters/artwork
   }
 }
+<<<<<<< HEAD
+>>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
