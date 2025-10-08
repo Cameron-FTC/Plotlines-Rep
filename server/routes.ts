@@ -182,24 +182,6 @@ app.post("/api/generate-story", async (req, res) => {
   }
 });
 
-
-const story: GeneratedSocialStory = {
-  id: `story-${Date.now()}`,
-  title: storyTitle,
-  story: storyContent,
-  imageUrl: `Description: An appropriate cover illustration could depict the theme of "${storyTitle}"`,
-  stepImages,
-  request,
-  createdAt: new Date().toISOString(),
-};
-
-      res.json(story);
-    } catch (error) {
-      console.error("Error generating story:", error);
-      res.status(500).json({ error: "Failed to generate story" });
-    }
-  });
-
   const httpServer = createServer(app);
   return httpServer;
 }
