@@ -3,6 +3,12 @@ import { createServer, type Server } from "http";
 import { socialStoryRequestSchema, type SocialStoryRequest, type GeneratedSocialStory, type StepImage } from "../shared/schema";
 import OpenAI from "openai";
 
+export async function registerRoutes(app: Express): Promise<Server> {
+  // define your endpoints here…
+  const httpServer = createServer(app);
+  return httpServer;
+}
+
 /**
  * SINGLE OpenAI client reused per process.
  */
@@ -122,7 +128,46 @@ Do not include any other headings or sections. Keep language supportive and deve
   return { intro, steps: stepsForUi, conclusion, full: storyContent };
 }
 
+app.post("/api/generate-story", async (req, res) => {
+  try {
+    const request = socialStoryRequestSchema.parse(req.body);
 
+    if (request.characterName === "Steven") {
+      const { intro, steps, conclusion } = await generateStoryWithOpenAI(request);
+
+      const stepImages: StepImage[] = steps.map((line, idx) => {
+        const stepText = line.replace(/^\d{1,2}[.)-]\s*/, "");
+        return {
+          stepNumber: idx + 1,
+          stepText,
+          imageUrl: `Description: An appropriate illustration could depict "${stepText}"`
+        };
+      });
+
+      const story: GeneratedSocialStory = {
+        id: `story-${Date.now()}`,
+        title: generateStoryTitle(request),
+        story: `${intro}\n\n${steps.join("\n")}\n\n${conclusion}`,
+        imageUrl: `Description: An appropriate cover illustration could depict the theme of "${generateStoryTitle(request)}"`,
+        stepImages,
+        request,
+        createdAt: new Date().toISOString(),
+      };
+
+      return res.json(story);
+    }
+
+    // … your non-Steven (offline) path …
+    // build the same GeneratedSocialStory payload and res.json(...)
+  } catch (err) {
+    const details = isDev() ? safeError(err) : undefined;
+    console.error("[/api/generate-story] error", details || err);
+    res.status(500).json({
+      error: "Failed to generate story with OpenAI",
+      ...(isDev() ? { details } : {})
+    });
+  }
+});
 // ————————————————————————————————————————————————————————————
 // Below here: your existing helpers (unchanged except minor typings)
 // ————————————————————————————————————————————————————————————
