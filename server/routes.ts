@@ -9,6 +9,12 @@ import OpenAI from "openai";
 /**
  * SINGLE OpenAI client reused per process.
  */
+<<<<<<< HEAD
+=======
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+>>>>>>> parent of 29eff43 (Deploying route fix)
 
 const openai = new OpenAI({
   apiKey: process.env.-OPENAI_API_KEY
@@ -125,19 +131,122 @@ Do not include any other headings or sections. Keep language supportive and deve
   return { intro, steps: stepsForUi, conclusion, full: storyContent };
 }
 export async function registerRoutes(app: Express): Promise<Server> {
+<<<<<<< HEAD
 app.post("/api/generate-story", async (req, res) => {
   try {
     const request = socialStoryRequestSchema.parse(req.body);
 
     if (request.characterName === "Steven") {
+=======
+  // ————————————————————————————————————————————————————————————
+  // Unified helper: call OpenAI and parse { intro, steps[10], conclusion }
+  // ————————————————————————————————————————————————————————————
+  async function generateStoryWithOpenAI(request: SocialStoryRequest): Promise<{ intro: string; steps: string[]; conclusion: string; full: string; }> {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY environment variable is not set.");
+    }
+
+    const prompt = `Write a Social Story with exactly 10 steps for a character named "${request.characterName}", written in the ${request.personPerspective} person perspective.
+The story should relate anecdotes to the motivating interest: "${request.motivatingInterest}".
+The goal is to help the reader understand the category "${request.storyCategory}" in the context of "${request.specificActivity}".
+Incorporate the following additional notes: "${request.additionalNotes}".
+
+STRICT FORMAT:
+- Introduction paragraph (no heading).
+- Then 10 steps, each on its own line, each starting with its number and a period (e.g. "1. ...", "2. ...", … "10. ..."), with no blank lines between steps.
+- Conclusion paragraph (no heading).
+Do not include any other headings or sections. Keep language supportive and developmentally appropriate.`;
+
+    // Use SDK (chat.completions). You can swap the model via env if you like.
+    const completion = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "You are a helpful assistant that writes therapeutic social stories for children." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 1200
+    });
+
+    const storyContent = completion.choices?.[0]?.message?.content ?? "";
+
+    // Parse intro / steps / conclusion
+    // Robust against “1)”, “1 - ”, etc., and wrapped lines.
+    const rawLines = storyContent.split("\n").map(s => s.trim()).filter(Boolean);
+
+    // Find index of first step and collect steps
+    const stepRegex = /^(\d{1,2})[.)-]\s+/; // 1.  2)  3-  etc.
+    let introLines: string[] = [];
+    let stepLines: string[] = [];
+    let conclusionLines: string[] = [];
+
+    let inSteps = false;
+
+    for (const line of rawLines) {
+      const m = line.match(stepRegex);
+      if (m) {
+        inSteps = true;
+        stepLines.push(line);
+        continue;
+      }
+      if (!inSteps) {
+        introLines.push(line);
+      } else {
+        // We are inside steps; if we already have 10 steps, the rest is conclusion
+        if (stepLines.length >= 10) {
+          conclusionLines.push(line);
+        } else if (stepLines.length > 0) {
+          // Continuation of previous step (word-wrapped)
+          stepLines[stepLines.length - 1] = stepLines[stepLines.length - 1] + " " + line;
+        }
+      }
+    }
+
+    // Truncate to exactly 10 steps if a model added extras
+    if (stepLines.length > 10) {
+      conclusionLines = stepLines.slice(10).concat(conclusionLines);
+      stepLines = stepLines.slice(0, 10);
+    }
+
+    // If we somehow got fewer than 10 steps, try a second pass by extracting all numbered lines
+    if (stepLines.length < 10) {
+      const numberedOnly = rawLines.filter(l => stepRegex.test(l));
+      if (numberedOnly.length >= 10) {
+        stepLines = numberedOnly.slice(0, 10);
+      }
+    }
+
+    // Keep the numbered steps (1. … 10.) for UI consistency; also provide unnumbered if needed
+    const stepsForUi = stepLines.map(s => s.replace(/^\s*/, "")); // keep “1. …” formatting
+
+    const intro = introLines.join(" ").trim();
+    const conclusion = conclusionLines.join(" ").trim();
+
+    return {
+      intro,
+      steps: stepsForUi, // << return the numbered steps (1. … 10.)
+      conclusion,
+      full: storyContent
+    };
+  }
+
+  // ————————————————————————————————————————————————————————————
+  // OpenAI-only endpoint (kept for convenience; now uses the helper)
+  // ————————————————————————————————————————————————————————————
+  app.post("/api/generate-story-openai", async (req, res) => {
+    try {
+      const request = socialStoryRequestSchema.parse(req.body);
+>>>>>>> parent of 29eff43 (Deploying route fix)
       const { intro, steps, conclusion } = await generateStoryWithOpenAI(request);
 
+      // Build a consistent response for your frontend
       const stepImages: StepImage[] = steps.map((line, idx) => {
         const stepText = line.replace(/^\d{1,2}[.)-]\s*/, "");
         return {
           stepNumber: idx + 1,
           stepText,
           imageUrl: `Description: An appropriate illustration could depict "${stepText}"`
+<<<<<<< HEAD
         };
 =======
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -201,6 +310,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const errorText = await openaiResponse.text();
         throw new Error(`OpenAI API error: ${openaiResponse.status} - ${errorText}`);
       }
+=======
+  };
+});
+
+      const story: GeneratedSocialStory = {
+  id: `story-${Date.now()}`,
+  title: generateStoryTitle(request),
+  story: `${intro}\n\n${steps.join("\n")}\n\n${conclusion}`,
+  imageUrl: `Description: An appropriate cover illustration could depict the theme of "${generateStoryTitle(request)}"`,
+  stepImages,
+  request,
+  createdAt: new Date().toISOString(),
+};
+>>>>>>> parent of 29eff43 (Deploying route fix)
 
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -279,13 +402,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to generate story with OpenAI" });
     }
   });
+<<<<<<< HEAD
   // Generate social story with image or OpenAI (for Steven)
+=======
+
+  // ————————————————————————————————————————————————————————————
+  // Main endpoint — now uses OpenAI when character is Steven, otherwise offline generator
+  // ————————————————————————————————————————————————————————————
+>>>>>>> parent of 29eff43 (Deploying route fix)
   app.post("/api/generate-story", async (req, res) => {
     try {
       const request = socialStoryRequestSchema.parse(req.body);
       if (request.characterName === "Steven") {
         // Use OpenAI for Steven
+<<<<<<< HEAD
   const prompt = `Write a Social Story with exactly 10 steps for a character named "${request.characterName}", written in the ${request.personPerspective} person perspective. The story should relate anecdotes to the motivating interest: "${request.motivatingInterest}". The goal is to help the reader understand the category "${request.storyCategory}" in the context of "${request.specificActivity}". Incorporate the following additional notes: "${request.additionalNotes}".\n\nFormat the story as follows:\n- An introduction paragraph.\n- 10 steps, each on its own line, each starting with its number and a period (e.g., '1. ...', '2. ...', etc.), with no extra line breaks between steps.\n- A conclusion paragraph.\n\nDo not include any other sections or formatting. Make it engaging, supportive, and developmentally appropriate.`;
+=======
+        const { intro, steps, conclusion } = await generateStoryWithOpenAI(request);
+>>>>>>> parent of 29eff43 (Deploying route fix)
 
         const openaiApiKey = process.env.OPENAI_API_KEY;
         if (!openaiApiKey) {
@@ -362,8 +496,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         return;
       }
+<<<<<<< HEAD
       // ...existing code for non-Steven characters below...
       // Generate the complete story content
+=======
+
+      // Fallback (non-Steven) — your existing offline path
+>>>>>>> parent of 29eff43 (Deploying route fix)
       const storyTitle = generateStoryTitle(request);
       const storyContent = generateEnhancedStory(request);
       // Extract steps from the story content
@@ -381,6 +520,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stepImages.push({
           stepNumber,
           stepText,
+<<<<<<< HEAD
           imageUrl: stepImageUrl,
         });
       }
@@ -396,6 +536,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         request,
         createdAt: new Date().toISOString(),
       };
+=======
+          imageUrl: `Description: An appropriate illustration could depict "${stepText}"`
+  };
+});
+
+const story: GeneratedSocialStory = {
+  id: `story-${Date.now()}`,
+  title: storyTitle,
+  story: storyContent,
+  imageUrl: `Description: An appropriate cover illustration could depict the theme of "${storyTitle}"`,
+  stepImages,
+  request,
+  createdAt: new Date().toISOString(),
+};
+
+>>>>>>> parent of 29eff43 (Deploying route fix)
       res.json(story);
     } catch (error) {
       console.error("Error generating story:", error);
@@ -408,11 +564,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   return httpServer;
 }
 
+<<<<<<< HEAD
 // Story generation functions (moved from frontend)
 <<<<<<< HEAD
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
+// ————————————————————————————————————————————————————————————
+// Below here: your existing helpers (unchanged except minor typings)
+// ————————————————————————————————————————————————————————————
+
+>>>>>>> parent of 29eff43 (Deploying route fix)
 function generateStoryTitle(request: SocialStoryRequest): string {
   const activity = request.specificActivity.charAt(0).toUpperCase() + request.specificActivity.slice(1);
   if (request.personPerspective === "first") {
@@ -463,6 +626,7 @@ function generateStoryConclusion(request: SocialStoryRequest): string { return "
 
 
 
+<<<<<<< HEAD
 =======
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
@@ -475,6 +639,8 @@ function generateStoryConclusion(request: SocialStoryRequest): string { return "
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
+>>>>>>> parent of 29eff43 (Deploying route fix)
 function getSubject(request: SocialStoryRequest, startOfSentence: boolean = true): string {
   if (request.personPerspective === "first") {
     return "I";
@@ -484,12 +650,17 @@ function getSubject(request: SocialStoryRequest, startOfSentence: boolean = true
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
+
+
+>>>>>>> parent of 29eff43 (Deploying route fix)
 function getPossessive(request: SocialStoryRequest, startOfSentence: boolean = false): string {
   if (request.personPerspective === "first") {
     return startOfSentence ? "My" : "my";
@@ -501,6 +672,7 @@ function getPossessive(request: SocialStoryRequest, startOfSentence: boolean = f
 
 
 
+<<<<<<< HEAD
 =======
   return `${request.characterName}'s`;
 }
@@ -511,30 +683,42 @@ function getPossessive(request: SocialStoryRequest, startOfSentence: boolean = f
 }
 
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
+>>>>>>> parent of 29eff43 (Deploying route fix)
 function getObjectPronoun(request: SocialStoryRequest): string {
   return request.personPerspective === "first" ? "me" : request.characterName; // Always capitalize character names
 }
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
+
+
+>>>>>>> parent of 29eff43 (Deploying route fix)
 function getReflexivePronoun(request: SocialStoryRequest): string {
   return request.personPerspective === "first" ? "myself" : "themselves";
 }
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
+
+
+>>>>>>> parent of 29eff43 (Deploying route fix)
 function getVerb(request: SocialStoryRequest, baseVerb: string): string {
   const isFirstPerson = request.personPerspective === "first";
   
@@ -547,6 +731,7 @@ function getVerb(request: SocialStoryRequest, baseVerb: string): string {
   return isFirstPerson ? baseVerb : baseVerb + "s";
 }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 
@@ -716,6 +901,10 @@ function extractSteps(storyContent: string): string[] {
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
+
+
+>>>>>>> parent of 29eff43 (Deploying route fix)
 function generateStepImagePrompt(request: SocialStoryRequest, stepText: string, stepNumber: number): string {
   const basePrompt = "A therapeutic, child-friendly illustration showing";
   const category = request.storyCategory;
@@ -733,6 +922,7 @@ function generateStepImagePrompt(request: SocialStoryRequest, stepText: string, 
   return `${basePrompt} ${stepScene}${interestEnhancement}${styleDescription}`;
 }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 
@@ -784,6 +974,9 @@ function generateStepSpecificScene(stepText: string, category: string, activity:
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
+
+>>>>>>> parent of 29eff43 (Deploying route fix)
 
 function generateImagePrompt(request: SocialStoryRequest): string {
   const basePrompt = "A therapeutic, child-friendly illustration showing";
@@ -801,6 +994,7 @@ function generateImagePrompt(request: SocialStoryRequest): string {
   
   return `${basePrompt} ${sceneDescription}${interestEnhancement}${styleDescription}`;
 }
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 =======
@@ -924,3 +1118,5 @@ function generateInterestEnhancement(interest: string, category: string): string
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
 =======
 >>>>>>> parent of c3ecce1 (Change to OpenAI response functionality)
+=======
+>>>>>>> parent of 29eff43 (Deploying route fix)
