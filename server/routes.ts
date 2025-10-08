@@ -10,6 +10,23 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
+function isDev() {
+  return process.env.NODE_ENV !== "production";
+}
+
+function safeError(e: unknown) {
+  const any = e as any;
+  const base = { message: String(any?.message || e), name: any?.name };
+  // If using official SDK, API errors often include status & response body:
+  return {
+    ...base,
+    status: any?.status,
+    code: any?.code,
+    type: any?.type,
+    details: any?.response?.data || any?.error || null,
+  };
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // ————————————————————————————————————————————————————————————
   // Unified helper: call OpenAI and parse { intro, steps[10], conclusion }
