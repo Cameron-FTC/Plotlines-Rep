@@ -3,18 +3,12 @@ import { createServer, type Server } from "http";
 import { socialStoryRequestSchema, type SocialStoryRequest, type GeneratedSocialStory, type StepImage } from "../shared/schema";
 import OpenAI from "openai";
 
-export async function registerRoutes(app: Express): Promise<Server> {
-  // define your endpoints here…
-  const httpServer = createServer(app);
-  return httpServer;
-}
-
 /**
  * SINGLE OpenAI client reused per process.
  */
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.-OPENAI_API_KEY
 });
 
 /**
@@ -127,7 +121,7 @@ Do not include any other headings or sections. Keep language supportive and deve
 
   return { intro, steps: stepsForUi, conclusion, full: storyContent };
 }
-
+export async function registerRoutes(app: Express): Promise<Server> {
 app.post("/api/generate-story", async (req, res) => {
   try {
     const request = socialStoryRequestSchema.parse(req.body);
@@ -168,6 +162,7 @@ app.post("/api/generate-story", async (req, res) => {
     });
   }
 });
+}
 // ————————————————————————————————————————————————————————————
 // Below here: your existing helpers (unchanged except minor typings)
 // ————————————————————————————————————————————————————————————
