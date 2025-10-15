@@ -218,7 +218,7 @@ export default function StoryGenerationForm({ onSubmit, isGenerating }: StoryGen
               control={form.control}
               name="individualFactors"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="space-y-3">
                   <FormLabel>Include Individual Factors</FormLabel>
                   <FormControl>
                     <Switch
