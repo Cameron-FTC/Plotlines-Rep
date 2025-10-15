@@ -219,9 +219,9 @@ export default function StoryGenerationForm({ onSubmit, isGenerating }: StoryGen
               name="individualFactors"
               render={({ field }) => (
                 <FormItem className="space-y-3">
+                  <div className="flex items-center space-x-2">
                   <FormLabel>Include Individual Factors</FormLabel>
                   <FormControl>
-                    <div className="flex items-center space-x-2">
                     <Switch
                       checked={field.value}
                       onCheckedChange={checked => {
@@ -230,8 +230,8 @@ export default function StoryGenerationForm({ onSubmit, isGenerating }: StoryGen
                       }}
                       data-testid="switch-individual-factors"
                     />
-                    </div>
                   </FormControl>
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}
