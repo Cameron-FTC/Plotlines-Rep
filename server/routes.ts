@@ -1,4 +1,4 @@
-import type { Express } from "express"; 
+import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { socialStoryRequestSchema, type SocialStoryRequest, type GeneratedSocialStory, type StepImage } from "../shared/schema";
 import OpenAI from "openai";
@@ -21,7 +21,36 @@ function safeError(e: unknown) {
   };
 }
 
-/* --- MOVE THIS OUTSIDE registerRoutes (top-level) --- */
+/* ───────────────────────────── Freepik helpers ───────────────────────────── */
+function freepikSearchUrl(query: string): string {
+  const base = "https://www.freepik.com/search";
+  const params = new URLSearchParams({ format: "search", query });
+  return `${base}?${params.toString()}`;
+}
+
+const FREEPIK_TOKEN_RE = /\[FREEPIK_QUERY:\s*([^\]]+)\]/i;
+
+function extractFreepikQueryAndClean(line: string) {
+  const fallbackText = line.replace(/^\s*\d{1,2}[.)-]\s*/, "").trim();
+  const m = line.match(FREEPIK_TOKEN_RE);
+  const query = (m?.[1] || fallbackText).replace(/\s+/g, " ").slice(0, 120).trim();
+  const cleanedForUi = line.replace(FREEPIK_TOKEN_RE, "").trim();
+  return { query, cleanedForUi };
+}
+
+function buildCoverFreepikQuery(request: SocialStoryRequest, title: string) {
+  const parts = [
+    "child friendly illustration",
+    request.storyCategory || "",
+    request.specificActivity || "",
+    request.motivatingInterest || "",
+    title || ""
+  ].filter(Boolean);
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+/* ─────────────────────────── End Freepik helpers ─────────────────────────── */
+
+/* --- OpenAI generator (Responses API) --- */
 export async function generateStoryWithOpenAI(request: SocialStoryRequest): Promise<{
   intro: string;
   steps: string[];
@@ -42,11 +71,13 @@ Additional notes: "${request.additionalNotes}"
 
 STRICT FORMAT:
 - Introduction paragraph (no heading).
-- Then 10 steps, each on its own line, each starting with its number and a period (e.g. "1. ...", "2. ...", … "10. ..."), no blank lines between.
+- Then 10 steps, each on its own line, each starting with its number and a period (e.g. "1. ...", "2. ...", "10. ..."), no blank lines between.
+- At the END of each step line, append a bracketed token with a short Freepik search phrase for that step, exactly like:
+  [FREEPIK_QUERY: <3-7 word phrase suitable for Freepik image search>]
+  Keep this phrase concise and literal (no quotes or punctuation), describing a child-friendly illustration (e.g., child brushing teeth bathroom).
 - Conclusion paragraph (no heading).
 Do not include any other headings or sections. Keep language supportive and developmentally appropriate.`;
 
-  // ——— Responses API ———
   let storyContent = "";
   try {
     const resp = await openai.responses.create({
@@ -108,62 +139,39 @@ Do not include any other headings or sections. Keep language supportive and deve
   return { intro, steps: stepsForUi, conclusion, full: storyContent };
 }
 
-/* --- Keep registerRoutes as a top-level named export --- */
+/* --- Route: always OpenAI --- */
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Main endpoint — uses OpenAI when character is Steven, otherwise offline generator
   app.post("/api/generate-story", async (req, res) => {
     try {
       const request = socialStoryRequestSchema.parse(req.body);
 
-      if (request.characterName === "Steven") {
-        const { intro, steps, conclusion } = await generateStoryWithOpenAI(request);
+      // Always use OpenAI path
+      const { intro, steps, conclusion } = await generateStoryWithOpenAI(request);
 
-        const stepImages: StepImage[] = steps.map((line, idx) => {
-          const stepText = line.replace(/^\d{1,2}[.)-]\s*/, "");
-          return {
-            stepNumber: idx + 1,
-            stepText,
-            imageUrl: `Description: An appropriate illustration could depict "${stepText}"`
-          };
-        });
-
-        const story: GeneratedSocialStory = {
-          id: `story-${Date.now()}`,
-          title: generateStoryTitle(request),
-          story: `${intro}\n\n${steps.join("\n")}\n\n${conclusion}`,
-          imageUrl: `Description: An appropriate cover illustration could depict the theme of "${generateStoryTitle(request)}"`,
-          stepImages,
-          request,
-          createdAt: new Date().toISOString(),
-        };
-
-        return res.json(story);
-      }
-
-      // … your non-Steven (offline) path …
-      // build the same GeneratedSocialStory payload and res.json(...)
-      const storyTitle = generateStoryTitle(request);
-      const storyContent = generateEnhancedStory(request);
-      const steps = extractSteps(storyContent);
-      const stepImages: StepImage[] = steps.map((step, i) => {
-        const stepText = step.replace(/^\d+\.\s*/, "").replace(/^•\s*/, "");
+      // Build step images from Freepik token
+      const stepImages: StepImage[] = steps.map((line, idx) => {
+        const { query, cleanedForUi } = extractFreepikQueryAndClean(line);
         return {
-          stepNumber: i + 1,
-          stepText,
-          imageUrl: `Description: An appropriate illustration could depict "${stepText}"`
+          stepNumber: idx + 1,
+          stepText: cleanedForUi.replace(/^\d{1,2}[.)-]\s*/, ""),
+          imageUrl: freepikSearchUrl(query)
         };
       });
+
+      const title = generateStoryTitle(request);
+      const coverQuery = buildCoverFreepikQuery(request, title);
+
       const story: GeneratedSocialStory = {
         id: `story-${Date.now()}`,
-        title: storyTitle,
-        story: storyContent,
-        imageUrl: `Description: An appropriate cover illustration could depict the theme of "${storyTitle}"`,
+        title,
+        story: `${intro}\n\n${steps.map(s => s.replace(FREEPIK_TOKEN_RE, "").trim()).join("\n")}\n\n${conclusion}`,
+        imageUrl: freepikSearchUrl(coverQuery),
         stepImages,
         request,
         createdAt: new Date().toISOString(),
       };
-      return res.json(story);
 
+      return res.json(story);
     } catch (err) {
       const details = isDev() ? safeError(err) : undefined;
       console.error("[/api/generate-story] error", details || err);
@@ -178,88 +186,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   return httpServer;
 }
 
-/* --- helpers (unchanged from your version) --- */
+/* --- minimal helper used by title --- */
 function generateStoryTitle(request: SocialStoryRequest): string {
-  const activity = request.specificActivity.charAt(0).toUpperCase() + request.specificActivity.slice(1);
-  if (request.personPerspective === "first") {
-    return "My Guide to " + activity;
-  } else {
-    return request.characterName + "'s Guide to " + activity;
-  }
+  const activity = request.specificActivity?.[0]
+    ? request.specificActivity[0].toUpperCase() + request.specificActivity.slice(1)
+    : "Activity";
+  return request.personPerspective === "first"
+    ? "My Guide to " + activity
+    : `${request.characterName}'s Guide to ${activity}`;
 }
-
-function generateEnhancedStory(request: SocialStoryRequest): string {
-  const intro = generateStoryIntro(request);
-  const steps = generateActivitySpecificSteps(request);
-  const challengeSteps = generateChallengeSteps(request);
-  const conclusion = generateStoryConclusion(request);
-  let result = intro + "\n\n" + steps;
-  if (challengeSteps) result += "\n\n" + challengeSteps;
-  result += "\n\n" + conclusion;
-  return result;
-}
-
-function extractSteps(story: string): string[] {
-  const lines = story.split(/\r?\n/);
-  const stepRegex = /^(\d+\.|•)\s+/;
-  const steps: string[] = [];
-  for (const l of lines) if (stepRegex.test(l.trim())) steps.push(l.trim());
-  if (steps.length === 0) {
-    const numbered = story.split(/(?=\n\d+\.\s)/).map(s => s.trim()).filter(Boolean);
-    return numbered.length ? numbered : lines.filter(Boolean);
-  }
-  return steps;
-}
-
-// Stubs — replace with your originals as needed
-function generateStoryIntro(request: SocialStoryRequest): string { return "Intro placeholder"; }
-function generateActivitySpecificSteps(request: SocialStoryRequest): string {
-  return "1. Step placeholder\n2. Step placeholder\n3. Step placeholder\n4. Step placeholder\n5. Step placeholder\n6. Step placeholder\n7. Step placeholder\n8. Step placeholder\n9. Step placeholder\n10. Step placeholder";
-}
-function generateChallengeSteps(request: SocialStoryRequest): string { return ""; }
-function generateStoryConclusion(request: SocialStoryRequest): string { return "Conclusion placeholder"; }
-
-function getSubject(request: SocialStoryRequest, startOfSentence: boolean = true): string {
-  if (request.personPerspective === "first") return "I";
-  return request.characterName;
-}
-function getPossessive(request: SocialStoryRequest, startOfSentence: boolean = false): string {
-  if (request.personPerspective === "first") return startOfSentence ? "My" : "my";
-  return request.characterName + "'s";
-}
-function getObjectPronoun(request: SocialStoryRequest): string {
-  return request.personPerspective === "first" ? "me" : request.characterName;
-}
-function getReflexivePronoun(request: SocialStoryRequest): string {
-  return request.personPerspective === "first" ? "myself" : "themselves";
-}
-function getVerb(request: SocialStoryRequest, baseVerb: string): string {
-  const isFirstPerson = request.personPerspective === "first";
-  if (baseVerb === "am/is") return isFirstPerson ? "am" : "is";
-  if (baseVerb === "have/has") return isFirstPerson ? "have" : "has";
-  if (baseVerb === "try/tries") return isFirstPerson ? "try" : "tries";
-  return isFirstPerson ? baseVerb : baseVerb + "s";
-}
-function generateStepImagePrompt(request: SocialStoryRequest, stepText: string, stepNumber: number): string {
-  const basePrompt = "A therapeutic, child-friendly illustration showing";
-  const category = request.storyCategory;
-  const interest = request.motivatingInterest?.toLowerCase() || "";
-  const activity = request.specificActivity.toLowerCase();
-  let stepScene = generateStepSpecificScene(stepText, category, activity, interest, stepNumber);
-  const interestEnhancement = interest ? `, incorporating ${interest} elements that make the step engaging and motivating` : "";
-  const styleDescription = ". Soft, calming art style with bright but soothing colors, child-friendly, therapeutic setting, no text or words, step-by-step visual guide";
-  return `${basePrompt} ${stepScene}${interestEnhancement}${styleDescription}`;
-}
-function generateImagePrompt(request: SocialStoryRequest): string {
-  const basePrompt = "A therapeutic, child-friendly illustration showing";
-  const activityDescription = request.specificActivity.toLowerCase();
-  const category = request.storyCategory;
-  const interest = request.motivatingInterest?.toLowerCase() || "";
-  let sceneDescription = generateSceneByCategory(category, activityDescription, interest);
-  const interestEnhancement = generateInterestEnhancement(interest, category);
-  const styleDescription = ". Soft, calming art style with bright but soothing colors, child-friendly, therapeutic setting, no text or words";
-  return `${basePrompt} ${sceneDescription}${interestEnhancement}${styleDescription}`;
-}
-
-/* If you have generateStepSpecificScene / generateSceneByCategory / generateInterestEnhancement in your original file,
-   keep them here too. */
