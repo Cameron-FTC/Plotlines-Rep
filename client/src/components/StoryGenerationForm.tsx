@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Sparkles, BookOpen } from "lucide-react";
 import { socialStoryRequestSchema, type SocialStoryRequest } from "@shared/schema";
+import { Switch } from "@/components/ui/switch";
 
 interface StoryGenerationFormProps {
   onSubmit: (data: SocialStoryRequest) => void;
@@ -30,8 +31,8 @@ const storyCategoryOptions = [
 
 export default function StoryGenerationForm({ onSubmit, isGenerating }: StoryGenerationFormProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>("");
-  const [showCustomDiagnosis, setShowCustomDiagnosis] = useState(false);
   const [showCustomCategory, setShowCustomCategory] = useState(false);
+  const [showAdditionalNotes, setShowAdditionalNotes] = useState(false);
 
   const form = useForm<SocialStoryRequest>({
     resolver: zodResolver(socialStoryRequestSchema),
@@ -42,7 +43,8 @@ export default function StoryGenerationForm({ onSubmit, isGenerating }: StoryGen
       storyCategory: "daily_living" as const,
       customCategory: "",
       specificActivity: "",
-      additionalNotes: ""
+      additionalNotes: "",
+      individualFactors: false
     }
   });
 
@@ -211,8 +213,30 @@ export default function StoryGenerationForm({ onSubmit, isGenerating }: StoryGen
                 </FormItem>
               )}
             />
+            {/* Include Individual Factors Switch */}
+            <FormField
+              control={form.control}
+              name="individualFactors"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Include Individual Factors</FormLabel>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={checked => {
+                        field.onChange(checked);
+                        setShowAdditionalNotes(checked);
+                      }}
+                      data-testid="switch-individual-factors"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             {/* Additional Notes */}
+            {showAdditionalNotes && (
             <FormField
               control={form.control}
               name="additionalNotes"
@@ -231,7 +255,7 @@ export default function StoryGenerationForm({ onSubmit, isGenerating }: StoryGen
                 </FormItem>
               )}
             />
-
+            )}
             <Button 
               type="submit" 
               className="w-full" 
