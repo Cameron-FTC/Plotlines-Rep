@@ -3,6 +3,19 @@ import { createServer, type Server } from "http";
 import {socialStoryRequestSchema,type SocialStoryRequest,type GeneratedSocialStory,type StepImage} from "../shared/schema";
 import OpenAI from "openai";
 
+// If your Node is < 18, enable global fetch
+// npm i node-fetch
+// (Harmless on Node >= 18)
+try {
+  // @ts-ignore
+  if (typeof fetch === "undefined") {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const nf = require("node-fetch");
+    // @ts-ignore
+    globalThis.fetch = nf;
+  }
+} catch {}
+
 /** Reuse one OpenAI client */
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
