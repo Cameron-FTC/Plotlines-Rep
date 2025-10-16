@@ -1,11 +1,12 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { socialStoryRequestSchema, type SocialStoryRequest, type GeneratedSocialStory, type StepImage } from "../shared/schema";
+import {socialStoryRequestSchema,type SocialStoryRequest,type GeneratedSocialStory,type StepImage} from "../shared/schema";
 import OpenAI from "openai";
 
-/** SINGLE OpenAI client reused per process. */
+/** Reuse one OpenAI client */
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+/** Utility: environment & safe error */
 function isDev() {
   return process.env.NODE_ENV !== "production";
 }
@@ -21,42 +22,105 @@ function safeError(e: unknown) {
   };
 }
 
-/* ───────────────────────────── Freepik helpers ───────────────────────────── */
-function freepikSearchUrl(query: string): string {
-  const base = "https://www.freepik.com/search";
-  const params = new URLSearchParams({ format: "search", query });
-  return `${base}?${params.toString()}`;
+/* ──────────────────────────────────────────────────────────────
+   Royalty-free image helpers (FREE, no API keys):
+   1) Openverse (WordPress) → 2) Wikimedia Commons fallback
+   ────────────────────────────────────────────────────────────── */
+
+async function fetchOpenverseImage(query: string): Promise<{ url: string; attribution?: string } | null> {
+  const params = new URLSearchParams({
+    q: query,
+    page_size: "1",
+    license_type: "commercial", // allow commercial use (still may need attribution)
+    // Uncomment to restrict to public domain / CC0 only (fewer results, no attribution):
+    // license: "cc0,pdm",
+    mature: "false",
+  });
+
+  const resp = await fetch(`https://api.openverse.engineering/v1/images/?${params.toString()}`, {
+    headers: { Accept: "application/json" },
+  });
+
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  const result = data?.results?.[0];
+  if (!result) return null;
+
+  const url: string | undefined = result?.url || result?.thumbnail;
+  if (!url) return null;
+
+  const title = result?.title || "";
+  const creator = result?.creator || "";
+  const attribution = creator
+    ? `${title ? `${title} – ` : ""}${creator} (via Openverse)`
+    : `${title || "Image"} (via Openverse)`;
+
+  return { url, attribution };
 }
 
-const FREEPIK_TOKEN_RE = /\[FREEPIK_QUERY:\s*([^\]]+)\]/i;
+async function fetchWikimediaImage(query: string): Promise<{ url: string; attribution?: string } | null> {
+  const params = new URLSearchParams({
+    action: "query",
+    format: "json",
+    origin: "*",
+    generator: "search",
+    gsrlimit: "1",
+    gsrsearch: query,
+    prop: "imageinfo",
+    iiprop: "url|extmetadata",
+    iiurlwidth: "1200",
+  });
 
-function extractFreepikQueryAndClean(line: string) {
-  const fallbackText = line.replace(/^\s*\d{1,2}[.)-]\s*/, "").trim();
-  const m = line.match(FREEPIK_TOKEN_RE);
-  const query = (m?.[1] || fallbackText).replace(/\s+/g, " ").slice(0, 120).trim();
-  const cleanedForUi = line.replace(FREEPIK_TOKEN_RE, "").trim();
-  return { query, cleanedForUi };
+  const resp = await fetch(`https://commons.wikimedia.org/w/api.php?${params.toString()}`, {
+    headers: { Accept: "application/json" },
+  });
+
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  const pages = data?.query?.pages;
+  if (!pages) return null;
+
+  const firstPage = Object.values(pages)[0] as any;
+  const ii = firstPage?.imageinfo?.[0];
+  if (!ii) return null;
+
+  const url: string | undefined = ii?.thumburl || ii?.url;
+  if (!url) return null;
+
+  const meta = ii?.extmetadata || {};
+  const artist = (meta.Artist?.value || "").replace(/<[^>]+>/g, "");
+  const credit = (meta.Credit?.value || "").replace(/<[^>]+>/g, "");
+  const licenseShort = meta.LicenseShortName?.value || "";
+  const attribution = [artist || credit, licenseShort ? `(${licenseShort})` : ""].filter(Boolean).join(" ");
+
+  return { url, attribution: attribution || "Wikimedia Commons" };
 }
 
-function buildCoverFreepikQuery(request: SocialStoryRequest, title: string) {
-  const parts = [
-    "child friendly illustration",
-    request.storyCategory || "",
-    request.specificActivity || "",
-    request.motivatingInterest || "",
-    title || ""
-  ].filter(Boolean);
-  return parts.join(" ").replace(/\s+/g, " ").trim();
-}
-/* ─────────────────────────── End Freepik helpers ─────────────────────────── */
+async function getRoyaltyFreeImageUrl(query: string): Promise<{ url: string | null; attribution?: string }> {
+  try {
+    const ov = await fetchOpenverseImage(query);
+    if (ov?.url) return { url: ov.url, attribution: ov.attribution };
+  } catch (e) {
+    if (isDev()) console.warn("[Openverse error]", safeError(e));
+  }
 
-/* --- OpenAI generator (Responses API) --- */
-export async function generateStoryWithOpenAI(request: SocialStoryRequest): Promise<{
-  intro: string;
-  steps: string[];
-  conclusion: string;
-  full: string;
-}> {
+  try {
+    const wm = await fetchWikimediaImage(query);
+    if (wm?.url) return { url: wm.url, attribution: wm.attribution };
+  } catch (e) {
+    if (isDev()) console.warn("[Wikimedia error]", safeError(e));
+  }
+
+  return { url: null };
+}
+
+/* ──────────────────────────────────────────────────────────────
+   OpenAI Responses API generator — ALWAYS used
+   ────────────────────────────────────────────────────────────── */
+
+export async function generateStoryWithOpenAI(
+  request: SocialStoryRequest
+): Promise<{ intro: string; steps: string[]; conclusion: string; full: string }> {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY environment variable is not set.");
   }
@@ -72,9 +136,6 @@ Additional notes: "${request.additionalNotes}"
 STRICT FORMAT:
 - Introduction paragraph (no heading).
 - Then 10 steps, each on its own line, each starting with its number and a period (e.g. "1. ...", "2. ...", "10. ..."), no blank lines between.
-- At the END of each step line, append a bracketed token with a short Freepik search phrase for that step, exactly like:
-  [FREEPIK_QUERY: <3-7 word phrase suitable for Freepik image search>]
-  Keep this phrase concise and literal (no quotes or punctuation), describing a child-friendly illustration (e.g., child brushing teeth bathroom).
 - Conclusion paragraph (no heading).
 Do not include any other headings or sections. Keep language supportive and developmentally appropriate.`;
 
@@ -84,7 +145,7 @@ Do not include any other headings or sections. Keep language supportive and deve
       model,
       input: [
         { role: "system", content: "You are a helpful assistant that writes therapeutic social stories for children." },
-        { role: "user", content: prompt }
+        { role: "user", content: prompt },
       ],
       temperature: 0.7,
       max_output_tokens: 1200,
@@ -109,7 +170,7 @@ Do not include any other headings or sections. Keep language supportive and deve
   }
 
   // Parse intro / steps / conclusion
-  const rawLines = storyContent.split("\n").map(s => s.trim()).filter(Boolean);
+  const rawLines = storyContent.split("\n").map((s) => s.trim()).filter(Boolean);
   const stepRegex = /^(\d{1,2})[.)-]\s+/;
 
   const introLines: string[] = [];
@@ -119,53 +180,80 @@ Do not include any other headings or sections. Keep language supportive and deve
 
   for (const line of rawLines) {
     const isStep = stepRegex.test(line);
-    if (isStep) { inSteps = true; stepLines.push(line); continue; }
-    if (!inSteps) introLines.push(line);
-    else if (stepLines.length >= 10) conclusionLines.push(line);
-    else if (stepLines.length > 0) stepLines[stepLines.length - 1] += " " + line;
+    if (isStep) {
+      inSteps = true;
+      stepLines.push(line);
+      continue;
+    }
+    if (!inSteps) {
+      introLines.push(line);
+    } else {
+      if (stepLines.length >= 10) conclusionLines.push(line);
+      else if (stepLines.length > 0) stepLines[stepLines.length - 1] += " " + line; // wrap continuation
+    }
   }
 
-  if (stepLines.length > 10) conclusionLines.unshift(...stepLines.splice(10));
+  if (stepLines.length > 10) {
+    conclusionLines.unshift(...stepLines.splice(10));
+  }
   if (stepLines.length < 10) {
-    const numbered = rawLines.filter(l => stepRegex.test(l)).slice(0, 10);
+    const numbered = rawLines.filter((l) => stepRegex.test(l)).slice(0, 10);
     if (numbered.length) stepLines.splice(0, stepLines.length, ...numbered);
   }
-  if (stepLines.length !== 10) throw new Error(`Expected 10 steps, got ${stepLines.length}`);
+  if (stepLines.length !== 10) {
+    throw new Error(`Expected 10 steps, got ${stepLines.length}`);
+  }
 
   const intro = introLines.join(" ").trim();
   const conclusion = conclusionLines.join(" ").trim();
-  const stepsForUi = stepLines.map(s => s.replace(/^\s*/, "")); // keep "1. ..."
+  const stepsForUi = stepLines.map((s) => s.replace(/^\s*/, "")); // keep "1. ..."
 
   return { intro, steps: stepsForUi, conclusion, full: storyContent };
 }
 
-/* --- Route: always OpenAI --- */
+/* ──────────────────────────────────────────────────────────────
+   Routes — ALWAYS OpenAI; fetch real royalty-free images (free)
+   ────────────────────────────────────────────────────────────── */
+
 export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/generate-story", async (req, res) => {
     try {
       const request = socialStoryRequestSchema.parse(req.body);
 
-      // Always use OpenAI path
+      // Generate story with OpenAI
       const { intro, steps, conclusion } = await generateStoryWithOpenAI(request);
 
-      // Build step images from Freepik token
-      const stepImages: StepImage[] = steps.map((line, idx) => {
-        const { query, cleanedForUi } = extractFreepikQueryAndClean(line);
-        return {
-          stepNumber: idx + 1,
-          stepText: cleanedForUi.replace(/^\d{1,2}[.)-]\s*/, ""),
-          imageUrl: freepikSearchUrl(query)
-        };
-      });
-
+      // Build cover image (Openverse → Wikimedia)
       const title = generateStoryTitle(request);
-      const coverQuery = buildCoverFreepikQuery(request, title);
+      const coverQuery = [request.storyCategory, request.specificActivity, request.motivatingInterest, title]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      const coverImg = await getRoyaltyFreeImageUrl(coverQuery);
+
+      // Build step images
+      const stepImages: StepImage[] = await Promise.all(
+        steps.map(async (line, idx) => {
+          const stepNumber = idx + 1;
+          const stepText = line.replace(/^\s*\d{1,2}[.)-]\s*/, "").trim();
+          const q = [stepText, request.storyCategory, request.specificActivity, request.motivatingInterest]
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+          const img = await getRoyaltyFreeImageUrl(q);
+          return {
+            stepNumber,
+            stepText,
+            imageUrl: img.url || "", // leave empty if no image found
+          };
+        })
+      );
 
       const story: GeneratedSocialStory = {
         id: `story-${Date.now()}`,
         title,
-        story: `${intro}\n\n${steps.map(s => s.replace(FREEPIK_TOKEN_RE, "").trim()).join("\n")}\n\n${conclusion}`,
-        imageUrl: freepikSearchUrl(coverQuery),
+        story: `${intro}\n\n${steps.join("\n")}\n\n${conclusion}`,
+        imageUrl: coverImg.url || "",
         stepImages,
         request,
         createdAt: new Date().toISOString(),
@@ -177,7 +265,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("[/api/generate-story] error", details || err);
       res.status(500).json({
         error: "Failed to generate story with OpenAI",
-        ...(isDev() ? { details } : {})
+        ...(isDev() ? { details } : {}),
       });
     }
   });
@@ -186,7 +274,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   return httpServer;
 }
 
-/* --- minimal helper used by title --- */
+/* ──────────────────────────────────────────────────────────────
+   Minimal helper to build a title
+   ────────────────────────────────────────────────────────────── */
 function generateStoryTitle(request: SocialStoryRequest): string {
   const activity = request.specificActivity?.[0]
     ? request.specificActivity[0].toUpperCase() + request.specificActivity.slice(1)
