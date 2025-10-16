@@ -259,6 +259,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdAt: new Date().toISOString(),
       };
 
+if (isDev()) {
+  console.log("[coverImage]", story.imageUrl);
+  console.log("[stepImages]", stepImages.map(s => ({ n: s.stepNumber, url: s.imageUrl })).slice(0, 3));
+}
+
       return res.json(story);
     } catch (err) {
       const details = isDev() ? safeError(err) : undefined;
@@ -269,6 +274,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
+// Image proxy to avoid hotlink/CSP issues
+app.get("/api/image-proxy", async (req, res) => {
+  try {
+    const src = (req.query.src as string) || "";
+    if (!src || !/^https?:\/\//i.test(src)) {
+      return res.status(400).send("Invalid src");
+    }
+    const upstream = await fetch(src, { headers: { "User-Agent": "PlotlinesBot/1.0" } });
+    if (!upstream.ok) {
+      return res.status(upstream.status).send("Upstream error");
+    }
+    // Pass through content type and cache headers if present
+    const ct = upstream.headers.get("content-type") || "image/jpeg";
+    res.setHeader("Content-Type", ct);
+    const cache = upstream.headers.get("cache-control");
+    if (cache) res.setHeader("Cache-Control", cache);
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    res.send(buf);
+  } catch (e) {
+    console.error("[/api/image-proxy] error", e);
+    res.status(500).send("Proxy error");
+  }
+});
 
   const httpServer = createServer(app);
   return httpServer;
