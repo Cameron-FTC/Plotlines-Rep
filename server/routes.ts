@@ -22,7 +22,7 @@ try {
 /** Reuse one OpenAI client */
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-/** Utility: environment & safe error */
+/** Utility */
 function isDev() {
   return process.env.NODE_ENV !== "production";
 }
@@ -39,8 +39,13 @@ function safeError(e: unknown) {
 }
 
 /* ───────────────────────── Image proxy & helpers ───────────────────────── */
+// Optionally set this if your API runs on a different origin than the SPA
+const API_ORIGIN = process.env.PUBLIC_API_ORIGIN || "";
 
-function makeProxiedFromReq(req: import("express").Request, src: string): string {
+function makeProxiedAbsolute(req: import("express").Request, src: string): string {
+  if (API_ORIGIN) {
+    return `${API_ORIGIN}/api/image-proxy?src=${encodeURIComponent(src)}`;
+  }
   const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "http";
   const host  = (req.headers["x-forwarded-host"] as string) || req.headers.host;
   return `${proto}://${host}/api/image-proxy?src=${encodeURIComponent(src)}`;
@@ -59,7 +64,7 @@ async function fetchOpenverseImage(query: string): Promise<{ url: string; attrib
     q: query,
     page_size: "1",
     license_type: "commercial", // may still require attribution
-    // To force PD/CC0 only: license: "cc0,pdm",
+    // To force PD/CC0 only (no attribution), uncomment: license: "cc0,pdm",
     mature: "false",
   });
 
@@ -72,7 +77,7 @@ async function fetchOpenverseImage(query: string): Promise<{ url: string; attrib
   const result = data?.results?.[0];
   if (!result) return null;
 
-  // Prefer thumbnail (direct image) then original url
+  // Prefer thumbnail (direct) then original url
   const raw: string | undefined = result?.thumbnail || result?.url;
   if (!raw) return null;
 
@@ -111,7 +116,6 @@ async function fetchWikimediaImage(query: string): Promise<{ url: string; attrib
   const ii = firstPage?.imageinfo?.[0];
   if (!ii) return null;
 
-  // thumburl is direct and sized; fallback to original
   const raw: string | undefined = ii?.thumburl || ii?.url;
   if (!raw) return null;
 
@@ -138,49 +142,106 @@ async function getRoyaltyFreeImageUrl(query: string): Promise<{ url: string; att
   } catch (e) {
     if (isDev()) console.warn("[Wikimedia error]", safeError(e));
   }
-  // Last-resort placeholder so imageUrl is never blank
   return { url: placeholderUrl(query) };
+}
+
+// Try the model-provided terms in a good order
+async function imageFromTerms(terms: string[], req: import("express").Request, fallbackLabel: string): Promise<string> {
+  const clean = (s: string) => s.replace(/\s+/g, " ").trim();
+  const uniq = Array.from(new Set(terms.map(clean).filter(Boolean)));
+  const candidates = [
+    uniq.join(" "),         // all terms combined
+    ...uniq,                // each term individually
+  ].filter(Boolean);
+
+  for (const q of candidates) {
+    const res = await getRoyaltyFreeImageUrl(q);
+    if (res.url && !res.url.startsWith("https://placehold.co")) {
+      return makeProxiedAbsolute(req, res.url);
+    }
+  }
+  // last resort
+  return placeholderUrl(fallbackLabel || uniq[0] || "Image");
 }
 
 /* ─────────────── OpenAI Responses API generator — ALWAYS used ──────────── */
 
-export async function generateStoryWithOpenAI(
-  request: SocialStoryRequest
-): Promise<{ intro: string; steps: string[]; conclusion: string; full: string }> {
+type StoryGen = {
+  intro: string;
+  steps: string[];
+  conclusion: string;
+  full: string;
+  coverTerms: string[];
+  stepTerms: string[][];
+};
+
+export async function generateStoryWithOpenAI(request: SocialStoryRequest): Promise<StoryGen> {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY environment variable is not set.");
   }
 
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-  const prompt = `Write a Social Story with exactly 10 steps for a character named "${request.characterName}", written in the ${request.personPerspective} person perspective.
-Motivating interest: "${request.motivatingInterest}"
-Story category: "${request.storyCategory}"
-Specific activity: "${request.specificActivity}"
-Additional notes: "${request.additionalNotes}"
+  const prompt = `
+You are a helpful assistant that writes therapeutic social stories for children AND also proposes concise image search terms.
 
-STRICT FORMAT:
-- Introduction paragraph (no heading).
-- Then 10 steps, each on its own line, each starting with its number and a period (e.g. "1. ...", "2. ...", "10. ..."), no blank lines between.
-- Conclusion paragraph (no heading).
-Do not include any other headings or sections. Keep language supportive and developmentally appropriate.`;
+Write a Social Story with exactly 10 steps for a character named "${request.characterName}", written in the ${request.personPerspective} person perspective.
 
-  let storyContent = "";
+Context:
+- Motivating interest: "${request.motivatingInterest}"
+- Story category: "${request.storyCategory}"
+- Specific activity: "${request.specificActivity}"
+- Additional notes: "${request.additionalNotes}"
+
+Output requirements:
+1) The story MUST have:
+   - An introduction paragraph (no heading).
+   - Exactly 10 steps, each as a single line starting with its number and a period (e.g., "1. ...", "2. ...", ..., "10. ..."). No blank lines between steps.
+   - A conclusion paragraph (no heading).
+
+2) ALSO choose 1 to 3 short, concrete image search terms for:
+   - The cover image (array of 1–3 strings)
+   - EACH step (array of arrays; length 10; each inner array has 1–3 strings)
+
+3) Respond ONLY as **strict JSON** matching this schema (no prose, no Markdown):
+
+{
+  "story": {
+    "intro": "string",
+    "steps": ["1. ...", "2. ...", "...", "10. ..."],
+    "conclusion": "string"
+  },
+  "images": {
+    "coverTerms": ["term1", "term2?"],
+    "stepTerms": [
+      ["term1","term2?"],  // for step 1
+      ["..."],             // for step 2
+      ["..."],             // for step 3
+      ["..."],             // for step 4
+      ["..."],             // for step 5
+      ["..."],             // for step 6
+      ["..."],             // for step 7
+      ["..."],             // for step 8
+      ["..."],             // for step 9
+      ["..."]              // for step 10
+    ]
+  }
+}
+`;
+
+  let jsonText = "";
   try {
     const resp = await openai.responses.create({
       model,
-      input: [
-        { role: "system", content: "You are a helpful assistant that writes therapeutic social stories for children." },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.7,
-      max_output_tokens: 1200,
+      input: [{ role: "user", content: prompt }],
+      temperature: 0.6,
+      max_output_tokens: 1500,
     });
 
-    storyContent = (resp as any).output_text?.trim?.() ?? "";
-    if (!storyContent) {
+    jsonText = (resp as any).output_text?.trim?.() ?? "";
+    if (!jsonText) {
       const pieces = (resp as any).content ?? [];
-      storyContent = pieces
+      jsonText = pieces
         .map((p: any) => (p?.text?.value ?? p?.text ?? "").trim())
         .filter(Boolean)
         .join("\n")
@@ -191,108 +252,91 @@ Do not include any other headings or sections. Keep language supportive and deve
     throw err;
   }
 
-  if (!storyContent) {
-    throw new Error("OpenAI returned empty content (possibly rate-limited or blocked).");
+  if (!jsonText) {
+    throw new Error("OpenAI returned empty content.");
   }
 
-  // Parse intro / steps / conclusion
-  const rawLines = storyContent.split("\n").map((s) => s.trim()).filter(Boolean);
-  const stepRegex = /^(\d{1,2})[.)-]\s+/;
-
-  const introLines: string[] = [];
-  const stepLines: string[] = [];
-  const conclusionLines: string[] = [];
-  let inSteps = false;
-
-  for (const line of rawLines) {
-    const isStep = stepRegex.test(line);
-    if (isStep) {
-      inSteps = true;
-      stepLines.push(line);
-      continue;
-    }
-    if (!inSteps) {
-      introLines.push(line);
-    } else {
-      if (stepLines.length >= 10) conclusionLines.push(line);
-      else if (stepLines.length > 0) stepLines[stepLines.length - 1] += " " + line; // wrap continuation
-    }
+  // Parse the strict JSON
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch (e) {
+    if (isDev()) console.error("[OpenAI JSON parse error] raw:", jsonText);
+    throw new Error("Failed to parse OpenAI JSON.");
   }
 
-  if (stepLines.length > 10) {
-    conclusionLines.unshift(...stepLines.splice(10));
+  // Validate minimal shape & coerce
+  const intro = String(parsed?.story?.intro ?? "").trim();
+  const steps: string[] = Array.isArray(parsed?.story?.steps) ? parsed.story.steps.map((s: any) => String(s)) : [];
+  const conclusion = String(parsed?.story?.conclusion ?? "").trim();
+
+  const coverTerms: string[] = Array.isArray(parsed?.images?.coverTerms)
+    ? parsed.images.coverTerms.map((s: any) => String(s))
+    : [];
+
+  const stepTerms: string[][] = Array.isArray(parsed?.images?.stepTerms)
+    ? parsed.images.stepTerms.map((arr: any) =>
+        Array.isArray(arr) ? arr.map((s: any) => String(s)) : []
+      )
+    : [];
+
+  if (steps.length !== 10) {
+    throw new Error(`Expected 10 steps, got ${steps.length}`);
   }
-  if (stepLines.length < 10) {
-    const numbered = rawLines.filter((l) => stepRegex.test(l)).slice(0, 10);
-    if (numbered.length) stepLines.splice(0, stepLines.length, ...numbered);
-  }
-  if (stepLines.length !== 10) {
-    throw new Error(`Expected 10 steps, got ${stepLines.length}`);
+  if (stepTerms.length !== 10) {
+    // Not fatal: pad with empty arrays
+    while (stepTerms.length < 10) stepTerms.push([]);
   }
 
-  const intro = introLines.join(" ").trim();
-  const conclusion = conclusionLines.join(" ").trim();
-  const stepsForUi = stepLines.map((s) => s.replace(/^\s*/, "")); // keep "1. ..."
-
-  return { intro, steps: stepsForUi, conclusion: conclusion, full: storyContent };
+  return {
+    intro,
+    steps,
+    conclusion,
+    full: jsonText, // keep raw json for debugging
+    coverTerms,
+    stepTerms,
+  };
 }
 
 /* ──────────────────────────────── Routes ──────────────────────────────── */
-/** ALWAYS OpenAI; then fetch real royalty-free images and proxy them with absolute URLs */
+/** ALWAYS OpenAI; then fetch images using the model-provided terms */
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/generate-story", async (req, res) => {
     try {
       const request = socialStoryRequestSchema.parse(req.body);
 
-      // 1) Generate the story
-      const { intro, steps, conclusion } = await generateStoryWithOpenAI(request);
+      // 1) Generate story + search terms
+      const { intro, steps, conclusion, coverTerms, stepTerms } = await generateStoryWithOpenAI(request);
 
-      // 2) Cover image (RAW → ABSOLUTE PROXIED)
-      const title = generateStoryTitle(request);
-      const coverQuery = [request.motivatingInterest]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
-      const coverImg = await getRoyaltyFreeImageUrl(coverQuery);
-      const coverUrl = coverImg.url ? makeProxiedFromReq(req, coverImg.url) : placeholderUrl(coverQuery);
+      // 2) Cover image via model-provided terms (proxied absolute URL)
+      const coverUrl = await imageFromTerms(coverTerms, req, "Cover");
 
-      // 3) Step images (parallel) (RAW → ABSOLUTE PROXIED)
+      // 3) Step images in parallel via stepTerms[i]
       const stepImages: StepImage[] = await Promise.all(
         steps.map(async (line, idx) => {
           const stepNumber = idx + 1;
           const stepText = line.replace(/^\s*\d{1,2}[.)-]\s*/, "").trim();
-          const q = [request.motivatingInterest]
-            .filter(Boolean)
-            .join(" ")
-            .trim();
-          const img = await getRoyaltyFreeImageUrl(q);
-          const proxied = img.url ? makeProxiedFromReq(req, img.url) : placeholderUrl(stepText);
-          return {
-            stepNumber,
-            stepText,
-            imageUrl: proxied, // absolute URL to your API
-          };
+          const terms = Array.isArray(stepTerms[idx]) ? stepTerms[idx] : [];
+          const url = await imageFromTerms(terms, req, stepText);
+          return { stepNumber, stepText, imageUrl: url };
         })
       );
 
       // 4) Respond
       const story: GeneratedSocialStory = {
         id: `story-${Date.now()}`,
-        title,
+        title: generateStoryTitle(request),
         story: `${intro}\n\n${steps.join("\n")}\n\n${conclusion}`,
-        imageUrl: coverUrl,    // absolute proxied URL
+        imageUrl: coverUrl,
         stepImages,
         request,
         createdAt: new Date().toISOString(),
       };
 
       if (isDev()) {
-        console.log("[coverImage]", story.imageUrl);
-        console.log(
-          "[stepImages]",
-          stepImages.map((s) => ({ n: s.stepNumber, url: s.imageUrl })).slice(0, 3)
-        );
+        console.log("[coverTerms]", coverTerms, "→", story.imageUrl);
+        console.log("[stepTerms 1..3]", stepTerms.slice(0, 3));
       }
 
       return res.json(story);
