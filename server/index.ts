@@ -5,7 +5,6 @@ import { setupVite, serveStatic, log } from "./vite";
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(require("express").json({ limit: "1mb" }));
 
 app.use((req, res, next) => {
   const start = Date.now();
