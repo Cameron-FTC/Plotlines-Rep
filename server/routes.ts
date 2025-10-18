@@ -199,9 +199,14 @@ Output requirements:
    - Exactly 10 steps, each as a single line starting with its number and a period (e.g., "1. ...", "2. ...", ..., "10. ..."). No blank lines between steps.
    - A conclusion paragraph (no heading).
 
-2) ALSO choose 1 to 3 short, concrete image search terms for:
-   - The cover image (array of 1–3 strings)
-   - EACH step (array of arrays; length 10; each inner array has 1–3 strings)
+2) ALSO choose 1 to 3 short, concrete **image search terms** that describe what should be visually depicted, 
+   focusing on **cartoon, illustration, or vector art** style (e.g., “cartoon boy brushing teeth”, “vector classroom illustration”).
+
+   - For the cover image: return 1–3 terms describing the overall story theme in illustration/vector style.
+   - For EACH step: return 1–3 terms that capture the main idea of the step, also phrased to return **cartoon / vector / illustration** art.
+
+   All search terms must clearly include one of the words: “cartoon”, “illustration”, “vector art”, or “clipart”.
+
 
 3) Respond ONLY as **strict JSON** matching this schema (no prose, no Markdown):
 
