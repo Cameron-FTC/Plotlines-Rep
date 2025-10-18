@@ -1,6 +1,11 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import {socialStoryRequestSchema,type SocialStoryRequest,type GeneratedSocialStory,type StepImage} from "../shared/schema";
+import {
+  socialStoryRequestSchema,
+  type SocialStoryRequest,
+  type GeneratedSocialStory,
+  type StepImage,
+} from "../shared/schema";
 import OpenAI from "openai";
 
 // If your Node is < 18, enable global fetch
@@ -35,17 +40,26 @@ function safeError(e: unknown) {
   };
 }
 
-/* ──────────────────────────────────────────────────────────────
-   Royalty-free image helpers (FREE, no API keys):
-   1) Openverse (WordPress) → 2) Wikimedia Commons fallback
-   ────────────────────────────────────────────────────────────── */
+/* ───────────────────────── Image proxy & helpers ───────────────────────── */
+
+function makeProxied(src: string): string {
+  return `/api/image-proxy?src=${encodeURIComponent(src)}`;
+}
+
+function placeholderUrl(text: string) {
+  const label = encodeURIComponent((text || "Image").slice(0, 40));
+  return `https://placehold.co/800x500?text=${label}`;
+}
+
+/* ───────────────── Royalty-free image helpers (FREE, no keys) ──────────── */
+/** Openverse (WordPress) → Wikimedia Commons fallback, return proxied URLs */
 
 async function fetchOpenverseImage(query: string): Promise<{ url: string; attribution?: string } | null> {
   const params = new URLSearchParams({
     q: query,
     page_size: "1",
-    license_type: "commercial", // allow commercial use (still may need attribution)
-    // Uncomment to restrict to public domain / CC0 only (fewer results, no attribution):
+    license_type: "commercial", // allow commercial use (may require attribution)
+    // If you want only PD/CC0 (no attribution), uncomment the next line (fewer results):
     // license: "cc0,pdm",
     mature: "false",
   });
@@ -59,8 +73,9 @@ async function fetchOpenverseImage(query: string): Promise<{ url: string; attrib
   const result = data?.results?.[0];
   if (!result) return null;
 
-  const url: string | undefined = result?.url || result?.thumbnail;
-  if (!url) return null;
+  // Prefer thumbnail (direct embeddable), fallback to original url
+  const raw: string | undefined = result?.thumbnail || result?.url;
+  if (!raw) return null;
 
   const title = result?.title || "";
   const creator = result?.creator || "";
@@ -68,7 +83,7 @@ async function fetchOpenverseImage(query: string): Promise<{ url: string; attrib
     ? `${title ? `${title} – ` : ""}${creator} (via Openverse)`
     : `${title || "Image"} (via Openverse)`;
 
-  return { url, attribution };
+  return { url: makeProxied(raw), attribution };
 }
 
 async function fetchWikimediaImage(query: string): Promise<{ url: string; attribution?: string } | null> {
@@ -97,39 +112,38 @@ async function fetchWikimediaImage(query: string): Promise<{ url: string; attrib
   const ii = firstPage?.imageinfo?.[0];
   if (!ii) return null;
 
-  const url: string | undefined = ii?.thumburl || ii?.url;
-  if (!url) return null;
+  // thumburl is direct and sized; fallback to original
+  const raw: string | undefined = ii?.thumburl || ii?.url;
+  if (!raw) return null;
 
   const meta = ii?.extmetadata || {};
   const artist = (meta.Artist?.value || "").replace(/<[^>]+>/g, "");
   const credit = (meta.Credit?.value || "").replace(/<[^>]+>/g, "");
   const licenseShort = meta.LicenseShortName?.value || "";
-  const attribution = [artist || credit, licenseShort ? `(${licenseShort})` : ""].filter(Boolean).join(" ");
+  const attribution =
+    [artist || credit, licenseShort ? `(${licenseShort})` : ""].filter(Boolean).join(" ") || "Wikimedia Commons";
 
-  return { url, attribution: attribution || "Wikimedia Commons" };
+  return { url: makeProxied(raw), attribution };
 }
 
-async function getRoyaltyFreeImageUrl(query: string): Promise<{ url: string | null; attribution?: string }> {
+async function getRoyaltyFreeImageUrl(query: string): Promise<{ url: string; attribution?: string }> {
   try {
     const ov = await fetchOpenverseImage(query);
     if (ov?.url) return { url: ov.url, attribution: ov.attribution };
   } catch (e) {
     if (isDev()) console.warn("[Openverse error]", safeError(e));
   }
-
   try {
     const wm = await fetchWikimediaImage(query);
     if (wm?.url) return { url: wm.url, attribution: wm.attribution };
   } catch (e) {
     if (isDev()) console.warn("[Wikimedia error]", safeError(e));
   }
-
-  return { url: null };
+  // Last-resort placeholder so imageUrl is never blank
+  return { url: placeholderUrl(query) };
 }
 
-/* ──────────────────────────────────────────────────────────────
-   OpenAI Responses API generator — ALWAYS used
-   ────────────────────────────────────────────────────────────── */
+/* ─────────────── OpenAI Responses API generator — ALWAYS used ──────────── */
 
 export async function generateStoryWithOpenAI(
   request: SocialStoryRequest
@@ -221,22 +235,21 @@ Do not include any other headings or sections. Keep language supportive and deve
   const conclusion = conclusionLines.join(" ").trim();
   const stepsForUi = stepLines.map((s) => s.replace(/^\s*/, "")); // keep "1. ..."
 
-  return { intro, steps: stepsForUi, conclusion, full: storyContent };
+  return { intro, steps: stepsForUi, conclusion: conclusion, full: storyContent };
 }
 
-/* ──────────────────────────────────────────────────────────────
-   Routes — ALWAYS OpenAI; fetch real royalty-free images (free)
-   ────────────────────────────────────────────────────────────── */
+/* ──────────────────────────────── Routes ──────────────────────────────── */
+/** ALWAYS OpenAI; then fetch real royalty-free images (Openverse/Wikimedia) */
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/generate-story", async (req, res) => {
     try {
       const request = socialStoryRequestSchema.parse(req.body);
 
-      // Generate story with OpenAI
+      // 1) Generate the story
       const { intro, steps, conclusion } = await generateStoryWithOpenAI(request);
 
-      // Build cover image (Openverse → Wikimedia)
+      // 2) Cover image
       const title = generateStoryTitle(request);
       const coverQuery = [request.storyCategory, request.specificActivity, request.motivatingInterest, title]
         .filter(Boolean)
@@ -244,7 +257,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .trim();
       const coverImg = await getRoyaltyFreeImageUrl(coverQuery);
 
-      // Build step images
+      // 3) Step images (parallel)
       const stepImages: StepImage[] = await Promise.all(
         steps.map(async (line, idx) => {
           const stepNumber = idx + 1;
@@ -257,25 +270,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return {
             stepNumber,
             stepText,
-            imageUrl: img.url || "", // leave empty if no image found
+            imageUrl: img.url || placeholderUrl(stepText), // never blank
           };
         })
       );
 
+      // 4) Respond
       const story: GeneratedSocialStory = {
         id: `story-${Date.now()}`,
         title,
         story: `${intro}\n\n${steps.join("\n")}\n\n${conclusion}`,
-        imageUrl: coverImg.url || "",
+        imageUrl: coverImg.url || placeholderUrl(coverQuery),
         stepImages,
         request,
         createdAt: new Date().toISOString(),
       };
 
-if (isDev()) {
-  console.log("[coverImage]", story.imageUrl);
-  console.log("[stepImages]", stepImages.map(s => ({ n: s.stepNumber, url: s.imageUrl })).slice(0, 3));
-}
+      if (isDev()) {
+        console.log("[coverImage]", story.imageUrl);
+        console.log(
+          "[stepImages]",
+          stepImages.map((s) => ({ n: s.stepNumber, url: s.imageUrl })).slice(0, 3)
+        );
+      }
 
       return res.json(story);
     } catch (err) {
@@ -288,37 +305,37 @@ if (isDev()) {
     }
   });
 
-// Image proxy to avoid hotlink/CSP issues
-app.get("/api/image-proxy", async (req, res) => {
-  try {
-    const src = (req.query.src as string) || "";
-    if (!src || !/^https?:\/\//i.test(src)) {
-      return res.status(400).send("Invalid src");
+  // Image proxy to avoid hotlink/CSP issues
+  app.get("/api/image-proxy", async (req, res) => {
+    try {
+      const src = (req.query.src as string) || "";
+      if (!src || !/^https?:\/\//i.test(src)) {
+        return res.status(400).send("Invalid src");
+      }
+      const upstream = await fetch(src, { headers: { "User-Agent": "PlotlinesBot/1.0" } });
+      if (!upstream.ok) {
+        return res.status(upstream.status).send("Upstream error");
+      }
+      // Pass through content type
+      const ct = upstream.headers.get("content-type") || "image/jpeg";
+      res.setHeader("Content-Type", ct);
+      // Optional cache
+      const cache = upstream.headers.get("cache-control");
+      if (cache) res.setHeader("Cache-Control", cache);
+      const buf = Buffer.from(await upstream.arrayBuffer());
+      res.send(buf);
+    } catch (e) {
+      console.error("[/api/image-proxy] error", e);
+      res.status(500).send("Proxy error");
     }
-    const upstream = await fetch(src, { headers: { "User-Agent": "PlotlinesBot/1.0" } });
-    if (!upstream.ok) {
-      return res.status(upstream.status).send("Upstream error");
-    }
-    // Pass through content type and cache headers if present
-    const ct = upstream.headers.get("content-type") || "image/jpeg";
-    res.setHeader("Content-Type", ct);
-    const cache = upstream.headers.get("cache-control");
-    if (cache) res.setHeader("Cache-Control", cache);
-    const buf = Buffer.from(await upstream.arrayBuffer());
-    res.send(buf);
-  } catch (e) {
-    console.error("[/api/image-proxy] error", e);
-    res.status(500).send("Proxy error");
-  }
-});
+  });
 
   const httpServer = createServer(app);
   return httpServer;
 }
 
-/* ──────────────────────────────────────────────────────────────
-   Minimal helper to build a title
-   ────────────────────────────────────────────────────────────── */
+/* ─────────────────────────────── Helpers ─────────────────────────────── */
+
 function generateStoryTitle(request: SocialStoryRequest): string {
   const activity = request.specificActivity?.[0]
     ? request.specificActivity[0].toUpperCase() + request.specificActivity.slice(1)
