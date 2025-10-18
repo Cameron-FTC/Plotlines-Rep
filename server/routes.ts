@@ -42,8 +42,10 @@ function safeError(e: unknown) {
 
 /* ───────────────────────── Image proxy & helpers ───────────────────────── */
 
-function makeProxied(src: string): string {
-  return `/api/image-proxy?src=${encodeURIComponent(src)}`;
+function makeProxiedFromReq(req: import("express").Request, src: string): string {
+  const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "http";
+  const host  = (req.headers["x-forwarded-host"] as string) || req.headers.host;
+  return `${proto}://${host}/api/image-proxy?src=${encodeURIComponent(src)}`;
 }
 
 function placeholderUrl(text: string) {
@@ -83,7 +85,7 @@ async function fetchOpenverseImage(query: string): Promise<{ url: string; attrib
     ? `${title ? `${title} – ` : ""}${creator} (via Openverse)`
     : `${title || "Image"} (via Openverse)`;
 
-  return { url: makeProxied(raw), attribution };
+  return { url: raw, attribution };
 }
 
 async function fetchWikimediaImage(query: string): Promise<{ url: string; attribution?: string } | null> {
@@ -123,7 +125,7 @@ async function fetchWikimediaImage(query: string): Promise<{ url: string; attrib
   const attribution =
     [artist || credit, licenseShort ? `(${licenseShort})` : ""].filter(Boolean).join(" ") || "Wikimedia Commons";
 
-  return { url: makeProxied(raw), attribution };
+  return { url: raw, attribution };
 }
 
 async function getRoyaltyFreeImageUrl(query: string): Promise<{ url: string; attribution?: string }> {
@@ -243,6 +245,19 @@ Do not include any other headings or sections. Keep language supportive and deve
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/generate-story", async (req, res) => {
+    // COVER
+const coverImg = await getRoyaltyFreeImageUrl(coverQuery);
+const coverUrl = coverImg.url ? makeProxiedFromReq(req, coverImg.url) : placeholderUrl(coverQuery);
+
+// STEPS (inside the Promise.all map)
+const img = await getRoyaltyFreeImageUrl(q);
+const proxied = img.url ? makeProxiedFromReq(req, img.url) : placeholderUrl(stepText);
+
+return {
+  stepNumber,
+  stepText,
+  imageUrl: proxied, // ← absolute URL to your API
+};
     try {
       const request = socialStoryRequestSchema.parse(req.body);
 
@@ -280,7 +295,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: `story-${Date.now()}`,
         title,
         story: `${intro}\n\n${steps.join("\n")}\n\n${conclusion}`,
-        imageUrl: coverImg.url || placeholderUrl(coverQuery),
+        imageUrl: coverUrl,
         stepImages,
         request,
         createdAt: new Date().toISOString(),
