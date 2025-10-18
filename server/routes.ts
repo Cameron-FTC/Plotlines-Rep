@@ -310,7 +310,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { intro, steps, conclusion, coverTerms, stepTerms } = await generateStoryWithOpenAI(request);
 
       // 2) Cover image via model-provided terms (proxied absolute URL)
-      const coverUrl = await imageFromTerms(coverTerms, req, "Cover");
+      const coverUrl = await imageFromTerms(coverTerms, req, "Cartoon illustration of " + request.specificActivity);
 
       // 3) Step images in parallel via stepTerms[i]
       const stepImages: StepImage[] = await Promise.all(
@@ -318,7 +318,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const stepNumber = idx + 1;
           const stepText = line.replace(/^\s*\d{1,2}[.)-]\s*/, "").trim();
           const terms = Array.isArray(stepTerms[idx]) ? stepTerms[idx] : [];
-          const url = await imageFromTerms(terms, req, stepText);
+          const url = await imageFromTerms(terms, req, stepText, "cartoon illustration");
           return { stepNumber, stepText, imageUrl: url };
         })
       );
