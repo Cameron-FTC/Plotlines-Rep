@@ -8,9 +8,7 @@ import {
 } from "../shared/schema";
 import OpenAI from "openai";
 
-// If your Node is < 18, enable global fetch
-// npm i node-fetch
-// (Harmless on Node >= 18)
+// If your Node is < 18, enable global fetch (harmless on >=18)
 try {
   // @ts-ignore
   if (typeof fetch === "undefined") {
@@ -54,15 +52,14 @@ function placeholderUrl(text: string) {
 }
 
 /* ───────────────── Royalty-free image helpers (FREE, no keys) ──────────── */
-/** Openverse (WordPress) → Wikimedia Commons fallback, return proxied URLs */
+/** Openverse (WordPress) → Wikimedia Commons fallback, return RAW URLs (no proxy here) */
 
 async function fetchOpenverseImage(query: string): Promise<{ url: string; attribution?: string } | null> {
   const params = new URLSearchParams({
     q: query,
     page_size: "1",
-    license_type: "commercial", // allow commercial use (may require attribution)
-    // If you want only PD/CC0 (no attribution), uncomment the next line (fewer results):
-    // license: "cc0,pdm",
+    license_type: "commercial", // may still require attribution
+    // To force PD/CC0 only: license: "cc0,pdm",
     mature: "false",
   });
 
@@ -75,7 +72,7 @@ async function fetchOpenverseImage(query: string): Promise<{ url: string; attrib
   const result = data?.results?.[0];
   if (!result) return null;
 
-  // Prefer thumbnail (direct embeddable), fallback to original url
+  // Prefer thumbnail (direct image) then original url
   const raw: string | undefined = result?.thumbnail || result?.url;
   if (!raw) return null;
 
@@ -241,38 +238,26 @@ Do not include any other headings or sections. Keep language supportive and deve
 }
 
 /* ──────────────────────────────── Routes ──────────────────────────────── */
-/** ALWAYS OpenAI; then fetch real royalty-free images (Openverse/Wikimedia) */
+/** ALWAYS OpenAI; then fetch real royalty-free images and proxy them with absolute URLs */
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/generate-story", async (req, res) => {
-    // COVER
-const coverImg = await getRoyaltyFreeImageUrl(coverQuery);
-const coverUrl = coverImg.url ? makeProxiedFromReq(req, coverImg.url) : placeholderUrl(coverQuery);
-
-// STEPS (inside the Promise.all map)
-const img = await getRoyaltyFreeImageUrl(q);
-const proxied = img.url ? makeProxiedFromReq(req, img.url) : placeholderUrl(stepText);
-
-return {
-  stepNumber,
-  stepText,
-  imageUrl: proxied, // ← absolute URL to your API
-};
     try {
       const request = socialStoryRequestSchema.parse(req.body);
 
       // 1) Generate the story
       const { intro, steps, conclusion } = await generateStoryWithOpenAI(request);
 
-      // 2) Cover image
+      // 2) Cover image (RAW → ABSOLUTE PROXIED)
       const title = generateStoryTitle(request);
       const coverQuery = [request.storyCategory, request.specificActivity, request.motivatingInterest, title]
         .filter(Boolean)
         .join(" ")
         .trim();
       const coverImg = await getRoyaltyFreeImageUrl(coverQuery);
+      const coverUrl = coverImg.url ? makeProxiedFromReq(req, coverImg.url) : placeholderUrl(coverQuery);
 
-      // 3) Step images (parallel)
+      // 3) Step images (parallel) (RAW → ABSOLUTE PROXIED)
       const stepImages: StepImage[] = await Promise.all(
         steps.map(async (line, idx) => {
           const stepNumber = idx + 1;
@@ -282,10 +267,11 @@ return {
             .join(" ")
             .trim();
           const img = await getRoyaltyFreeImageUrl(q);
+          const proxied = img.url ? makeProxiedFromReq(req, img.url) : placeholderUrl(stepText);
           return {
             stepNumber,
             stepText,
-            imageUrl: img.url || placeholderUrl(stepText), // never blank
+            imageUrl: proxied, // absolute URL to your API
           };
         })
       );
@@ -295,7 +281,7 @@ return {
         id: `story-${Date.now()}`,
         title,
         story: `${intro}\n\n${steps.join("\n")}\n\n${conclusion}`,
-        imageUrl: coverUrl,
+        imageUrl: coverUrl,    // absolute proxied URL
         stepImages,
         request,
         createdAt: new Date().toISOString(),
@@ -331,10 +317,8 @@ return {
       if (!upstream.ok) {
         return res.status(upstream.status).send("Upstream error");
       }
-      // Pass through content type
       const ct = upstream.headers.get("content-type") || "image/jpeg";
       res.setHeader("Content-Type", ct);
-      // Optional cache
       const cache = upstream.headers.get("cache-control");
       if (cache) res.setHeader("Cache-Control", cache);
       const buf = Buffer.from(await upstream.arrayBuffer());
