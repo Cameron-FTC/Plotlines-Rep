@@ -66,6 +66,7 @@ async function fetchOpenverseImage(query: string): Promise<{ url: string; attrib
     license_type: "commercial", // may still require attribution
     // To force PD/CC0 only (no attribution), uncomment: license: "cc0,pdm",
     mature: "false",
+    category: "illustration",
   });
 
   const resp = await fetch(`https://api.openverse.engineering/v1/images/?${params.toString()}`, {
