@@ -250,7 +250,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // 2) Cover image (RAW → ABSOLUTE PROXIED)
       const title = generateStoryTitle(request);
-      const coverQuery = [request.storyCategory, request.specificActivity, request.motivatingInterest, title]
+      const coverQuery = [request.motivatingInterest]
         .filter(Boolean)
         .join(" ")
         .trim();
@@ -262,7 +262,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         steps.map(async (line, idx) => {
           const stepNumber = idx + 1;
           const stepText = line.replace(/^\s*\d{1,2}[.)-]\s*/, "").trim();
-          const q = [stepText, request.storyCategory, request.specificActivity, request.motivatingInterest]
+          const q = [request.motivatingInterest]
             .filter(Boolean)
             .join(" ")
             .trim();
