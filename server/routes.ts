@@ -193,6 +193,9 @@ Context:
 - Specific activity: "${request.specificActivity}"
 - Additional notes: "${request.additionalNotes}"
 
+What is a Social Story?:
+This website contains detail of what a social story is and how it should be written: https://lifeskillsadvocate.com/blog/how-to-write-a-social-story/
+
 Output requirements:
 1) The story MUST have:
    - An introduction paragraph (no heading).
