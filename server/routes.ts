@@ -188,13 +188,28 @@ You are a helpful assistant that writes therapeutic social stories for children 
 Write a Social Story with exactly 10 steps for a character named "${request.characterName}", written in the ${request.personPerspective} person perspective.
 
 Context:
-- Motivating interest: "${request.motivatingInterest}"
+- Motivating interest: "${request.motivatingInterest}" The motivating interest should be used to create annecdotes or examples within the story to help engage the reader. Anecdotes/exampels should be used tastefully and are not necessary for every step.
 - Story category: "${request.storyCategory}"
 - Specific activity: "${request.specificActivity}"
 - Additional notes: "${request.additionalNotes}"
 
 What is a Social Story?:
-This website contains detail of what a social story is and how it should be written: https://lifeskillsadvocate.com/blog/how-to-write-a-social-story/
+A social story must:
+Have a goal
+Include a two-step discovery process
+Contain a title and introduction that identify the topic, a body that adds detail, and a conclusion that reinforces and summarizes the information
+Has a format that is tailored to the individual abilities, learning style, talented, interests, and attention span of the audience
+Have a patient and supportive voice along with vocabulary that:
+Has exclusive use of first- and/or third-person perspective statements (no second-person “you”)
+Contains past, present, or future tense
+Has a positive, patient tone
+Is literally accurate
+Has an accurate meaning
+Answers questions about where, when, who, what, how, and why
+Contains descriptive and coaching sentences (sentences that guide behavior)
+Has language that describes more than it directs
+Is constantly revised
+Has a plan for editing and implementation
 
 Output requirements:
 1) The story MUST have:
